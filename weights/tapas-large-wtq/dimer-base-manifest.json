@@ -1,0 +1,40 @@
+{
+  "format": "dimer_hf_snapshot",
+  "formatVersion": 1,
+  "modelKey": "tapas-large-wtq",
+  "modelId": "google/tapas-large-finetuned-wtq",
+  "revision": "f58317ab2577d17647d9acafa790c744a0388b30",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 7224,
+      "sha256": "2397bdae46316684903465e6f425a9fe10c85d491a9755ec7a31a74353c034c8"
+    },
+    {
+      "path": "config.json",
+      "bytes": 1659,
+      "sha256": "834f44a325a349d2d209ecb18e4fa2ca3cdb16cef5b169e5c0a8f5e16c444d13"
+    },
+    {
+      "path": "model.safetensors",
+      "bytes": 1346985282,
+      "sha256": "149247e13732c222ba621e0c4e7b90ba260869b36adcbe115dc872c2c98bccf0"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "bytes": 154,
+      "sha256": "e3ec7abc6bcd45aba696cb95e9945186dad920aea78733f8b45c83d696ed0dea"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 490,
+      "sha256": "ab033df4f3c902cbc66bae2736bc99f4a59c43e7d9e53e40046576826b2cc5e9"
+    },
+    {
+      "path": "vocab.txt",
+      "bytes": 262028,
+      "sha256": "4d96f9308bcf9019684fcc109aa8c042b9b745edabba0162fbe66c75ebee2db4"
+    }
+  ],
+  "totalBytes": 1347256837
+}

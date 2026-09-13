@@ -1,14 +1,79 @@
-# tapas-table-question-answering-pipeline
+# TAPAS Table Question Answering Pipeline
 
-DIMER pipeline scaffold for **google/tapas-large-finetuned-wtq** — Table question answering.
+DIMER inference wrapper for **`google/tapas-large-finetuned-wtq`** — table question answering by cell selection plus one aggregation operator (NONE/SUM/AVERAGE/COUNT) — pinned to an immutable Hugging Face revision and loaded only from a digest-verified local snapshot.
 
-| | |
-|---|---|
-| Upstream model | [`google/tapas-large-finetuned-wtq`](https://huggingface.co/google/tapas-large-finetuned-wtq) |
-| Pinned revision | `f58317ab2577d17647d9acafa790c744a0388b30` (resolved 2026-09-13) |
-| Upstream license | `apache-2.0` (verified on the Hub 2026-09-13; re-check at the pinned revision before release) |
-| Weight files to stage | `model.safetensors` |
-| Status | scaffold only — no weights downloaded, no pipeline code yet |
+## Upstream alignment
 
-Weights are staged under `weights/` and are git-ignored. This repository follows the
-MODEL_CARD_SPEC 1.1 / NOTEBOOK_SPEC 1.1 conventions used by the other `*-pipeline` repos.
+- Model: `google/tapas-large-finetuned-wtq` (TAPAS large, 24 layers, hidden 1024, BERT-style encoder with cell-selection and aggregation heads, fine-tuned on SQA → WikiSQL → WikiTableQuestions; `reset` position embeddings)
+- Revision: `f58317ab2577d17647d9acafa790c744a0388b30`
+- Upstream weight license: Apache-2.0
+- Upstream task: table question answering (WTQ); the model selects cells and an operator, it never emits a number
+- Repository adaptation: **none**; inference only. The numeric value for SUM/AVERAGE/COUNT is computed by this package from the selected cells and labelled as such.
+
+## Quick start
+
+```python
+from tapas_table_qa_pipeline import TAPASTableQAPipeline
+
+table = {
+    "City": ["Manila", "Cebu", "Davao", "Baguio"],
+    "Population (2020)": ["1,846,513", "964,169", "1,776,949", "366,358"],
+    "Region": ["NCR", "Region VII", "Region XI", "CAR"],
+}
+pipe = TAPASTableQAPipeline.from_pretrained()          # cuda:0 if available, else cpu
+result = pipe.answer(table, "What is the total population of Manila and Davao?")
+print(result["aggregation"], result["cells"], result["numeric_answer"])   # SUM ['1,846,513', '1,776,949'] 3623462.0
+```
+
+`answer(table, query)` takes one table as `{column: [cells]}` or `[{column: cell}, ...]` — every header and cell a `str` — and one question, and returns `cells`, `coordinates`, `aggregation`, the upstream-style `answer` string, `numeric_answer` (pipeline arithmetic over the selected cells; `None` when a cell does not parse, listed in `unparsed_cells`), the four `aggregation_logits`, `n_tokens`, `tokens_before_truncation`, `rows_kept` and `truncated`. Cells are selected at a fixed sigmoid threshold `CELL_THRESHOLD = 0.5` and the operator by argmax, exactly as the upstream `convert_logits_to_predictions`. Ceilings: `MAX_ROWS = 64`, `MAX_COLUMNS = 32` (rejected), `MAX_TOKENS = 512` (the tokenizer truncates: cell text trimmed, then trailing rows dropped — reported, never silent), `MAX_QUERY_CHARS = 500`, `MAX_CELL_CHARS = 200`. `denotation_accuracy(results, golds)` is the shipped metric helper.
+
+## Weights layout
+
+```
+weights/tapas-large-wtq/
+  dimer-base-manifest.json   # modelId, revision, per-file bytes + sha256 (verified on every load)
+  config.json                # TapasForQuestionAnswering architecture, aggregation_labels, max_num_rows/columns
+  tokenizer_config.json, special_tokens_map.json, vocab.txt
+  model.safetensors          # 1346985282 bytes, git-ignored
+  README.md                  # upstream card listed in the manifest; not used by the loader
+```
+
+`from_pretrained()` calls `stage_missing_files()` then `verify_snapshot()` and refuses to load if any manifest file is missing or its SHA-256 differs. On a fresh clone (manifest committed, weights git-ignored) `from_pretrained(allow_download=True)` fetches only the missing files at the pinned revision; the default is to refuse. Without any manifest, `allow_download=True` loads from the Hub with `revision=f58317ab2577d17647d9acafa790c744a0388b30`.
+
+## Tests and smoke
+
+```
+pip install -e . --no-deps
+pytest -q -o addopts= tests      # offline, no weights needed
+```
+
+Smoke (loads the verified snapshot on CPU; measured numbers are in `MODEL_CARD.md` → Runtime):
+
+```python
+from tapas_table_qa_pipeline import TAPASTableQAPipeline
+
+pipe = TAPASTableQAPipeline.from_pretrained(device="cpu")
+print(pipe.answer({"City": ["Manila", "Cebu"], "Region": ["NCR", "Region VII"]}, "Which city is in Region VII?")["cells"])
+```
+
+Runtime note: the `TapasTokenizer` in `transformers==4.57.6` predates `pandas==3.0.5` (pyarrow-backed string columns reject its `Cell` objects, and positional `row[col_index]` on a `Series` was removed); the loader builds the frame with `dtype=object` through a `DataFrame` subclass whose `iterrows()` yields position-indexed rows. No tokenizer code is modified.
+
+## Tutorials
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tapas-table-question-answering-pipeline/blob/main/tutorials/tapas_table_qa_colab.ipynb)
+
+`tutorials/tapas_table_qa_colab.ipynb` is declared `TASK-INFERENCE` under DIMER Notebook Specification 1.1 and is **standalone** (§3.6): generated by `tools/build_notebook.py`, it carries the pipeline module, model identity, manifest digests and runtime pins, so the exported notebook runs without this repository (parity enforced by `tests/test_notebook_parity.py`; see `tutorials/README.md`). Its default path authors one synthetic 4×3 table and three questions (a lookup, a COUNT and a SUM), surfaces `MAX_ROWS`/`MAX_COLUMNS`/`MAX_TOKENS`/`MAX_QUERY_CHARS`/`MAX_CELL_CHARS`, `AGGREGATIONS` and `CELL_THRESHOLD`, stages the missing `model.safetensors` with `stage_missing_files(..., allow_download=True)` and digest-verifies the snapshot with `verify_snapshot`, validates the table and questions into an input manifest with `validate_inputs` (one recorded rejection of a non-string cell), runs `answer` for each question with sanity checks on the cell/aggregation/numeric contract, writes an `evaluation_report` (`sample-sanity` with `denotation_accuracy` on the three author-supplied gold answers; `not-measurable` on BYOD without golds), and exports an answers CSV plus a provenance JSON. BYOD is optional and gated off by default.
+
+## Release status
+
+**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. Complete `docs/release-verification.md` against the exact release revision before calling the notebook release-grade.
+
+## Documents
+
+- [`MODEL_CARD.md`](MODEL_CARD.md) — MODEL_CARD_SPEC 1.1 card
+- [`docs/WEIGHTS.md`](docs/WEIGHTS.md) — weight provenance and hosting
+- [`STATUS.md`](STATUS.md) — release status
+
+## Licensing
+
+Repository code is Apache-2.0 (see `LICENSE`). The upstream weights are Apache-2.0; see `docs/WEIGHTS.md`.
