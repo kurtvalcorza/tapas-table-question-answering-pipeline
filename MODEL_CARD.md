@@ -3,6 +3,8 @@ license: apache-2.0
 model_card_spec: "1.1"
 pipeline_tag: table-question-answering
 base_model: google/tapas-large-finetuned-wtq
+date_published: "2020-12-17"
+date_published_source: "earliest commit in the Hugging Face Hub repository history (`initial commit`); the Hub `createdAt` 2022-03-02 is the migration stamp"
 ---
 
 # TAPAS large WTQ (DIMER package v0.1.0) — Table Question Answering Model (Cell Selection & Aggregation)
@@ -11,7 +13,6 @@ base_model: google/tapas-large-finetuned-wtq
 [![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-google--research%2Ftapas-181717?style=flat&logo=github&logoColor=white)](https://github.com/google-research/tapas)
 [![arXiv Paper](https://img.shields.io/badge/arXiv-2004.02349-b31b1b.svg)](https://arxiv.org/abs/2004.02349)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Pipeline](https://img.shields.io/badge/Pipeline-tapas--table--question--answering--pipeline-2ea44f?style=flat&logo=github)](https://github.com/kurtvalcorza/tapas-table-question-answering-pipeline)
 
 > [!WARNING]
 > ⚠️ **Provided for research, training, and evaluation purposes only.** Model weights are redistributed unmodified under their upstream license, which controls your use, including any commercial use or redistribution; the accompanying code and notebooks are released under this repository's license. All of it is supplied **"as is"**, without warranty of any kind, and has not been validated for production, clinical, or safety-critical use. Running the notebooks downloads third-party weights and datasets governed by their own licenses and consumes compute on your own Colab/Kaggle account. To the maximum extent permitted by law, the maintainers of this repository and the DIMER platform accept no liability for any damages arising from their use. Hosting implies no affiliation with or endorsement by the original authors.
@@ -28,7 +29,7 @@ This pipeline provides a ready-to-run interactive Google Colab notebook that exe
 
 ---
 
-###### Description
+#### Description
 
 `google/tapas-large-finetuned-wtq` is the large TAPAS checkpoint released by Google Research (Herzig et al., arXiv:2004.02349; intermediate pre-training by Eisenschlos et al., arXiv:2010.00571), redistributed on the Hub with a card written by the Hugging Face team, and pinned here to revision `f58317ab2577d17647d9acafa790c744a0388b30` — the upstream default `reset` branch (`tapas_wtq_wikisql_sqa_inter_masklm_large_reset`), which resets the position index at every cell. It is a BERT-style bidirectional encoder — 24 layers, hidden size 1024, 16 attention heads, 30 522-entry WordPiece vocabulary, seven extra token-type embeddings for segment, column, row, numeric rank and relation ids (snapshot `config.json`) — pre-trained with masked language modelling and an intermediate table-entailment task on Wikipedia tables, then fine-tuned in a chain on SQA, WikiSQL and finally WikiTableQuestions with two heads: cell selection and aggregation (`aggregation_labels`: NONE, SUM, AVERAGE, COUNT). At inference this package flattens one table and one question into `[CLS] question [SEP] table`, runs the encoder once, selects every cell whose mean token sigmoid probability exceeds `CELL_THRESHOLD = 0.5` and takes the argmax aggregation — the exact semantics of the upstream `TapasTokenizer.convert_logits_to_predictions`, which the loader calls. The model emits no number; the `numeric_answer` field is computed by this package from the selected cell strings and labelled by `numeric_answer_source`. Nothing is fine-tuned, adapted or conditioned in this repository. What it adds is packaging: the `TAPASTableQAPipeline` class in `src/tapas_table_qa_pipeline/pipeline.py`, digest verification of the local snapshot (`verify_snapshot`, `stage_missing_files`), table and question validation against named ceilings, a fixed output contract, the `denotation_accuracy` metric helper, and the `validate_inputs`/`evaluation_report` stage helpers.
 
