@@ -7,7 +7,7 @@ date_published: "2020-12-17"
 date_published_source: "earliest commit in the Hugging Face Hub repository history (`initial commit`); the Hub `createdAt` 2022-03-02 is the migration stamp"
 ---
 
-# TAPAS large WTQ (DIMER package v0.1.0) — Table Question Answering Model (Cell Selection & Aggregation)
+# TAPAS large WTQ — Table Question Answering Model (Cell Selection & Aggregation)
 
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-google%2Ftapas--large--finetuned--wtq-ffcc4d?style=flat)](https://huggingface.co/google/tapas-large-finetuned-wtq)
 [![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-google--research%2Ftapas-181717?style=flat&logo=github&logoColor=white)](https://github.com/google-research/tapas)
