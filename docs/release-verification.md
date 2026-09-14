@@ -109,7 +109,7 @@ A known-failing default path in the supported runtime blocks release.
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `tutorials/tapas_table_qa_colab.ipynb` | | | | pending — queued to the GPU lane |
+| `tapas_table_qa_colab.ipynb` | `8ef61d5` / `08f1778d5ce6` | 2026-09-14 | Kaggle CPU (`kurtvalcorza/dimer-nb2-tapas-table-qa` v1) | PASS — 8/8 ok (1 restart after install cell) |
 
 ## Recorded executions
 
@@ -127,7 +127,7 @@ the package, not this notebook, and are not notebook execution evidence.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| — | — | — | Default sample path | — | pending — queued to the GPU lane |
+| 2026-09-14 | `8ef61d5` / `08f1778d5ce6` | Kaggle CPU (`kurtvalcorza/dimer-nb2-tapas-table-qa` v1) | Default sample path | 258.7 s | **PASSED** — 8/8 ok code cells executed cleanly, 14 files, 1347 MB staged |
 
 ## Current status
 
