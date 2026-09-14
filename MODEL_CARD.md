@@ -2,6 +2,7 @@
 license: apache-2.0
 model_card_spec: "1.1"
 pipeline_tag: table-question-answering
+task: "Others - Table Question Answering"
 base_model: google/tapas-large-finetuned-wtq
 date_published: "2020-12-17"
 date_published_source: "earliest commit in the Hugging Face Hub repository history (`initial commit`); the Hub `createdAt` 2022-03-02 is the migration stamp"
