@@ -63,7 +63,7 @@ TEMPLATE = {
         "as safetensors with a manifest, and reloads that artifact into a fresh pipeline to verify answer parity. The default "
         "path needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
         "(NOTEBOOK_SPEC 2.0 §5). TAPAS-large is a 24-layer encoder over up to 512 tokens: on the build workstation's CPU the "
-        "whole path took about CPU_TOTAL_MIN minutes after the downloads (expect a multiple of that on a 2-vCPU hosted runtime); "
+        "whole path took about 31 minutes after the downloads (expect a multiple of that on a 2-vCPU hosted runtime); "
         "a CUDA runtime is used automatically when present and finishes in a few minutes."
     ),
     "byod": (
@@ -117,7 +117,7 @@ TEMPLATE = {
         "tables. The repository exposes none of these."
     ),
     "prerequisites": [
-        "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). The default path runs on CPU (float32) and uses CUDA automatically when available (also float32). CPU is slow: TAPAS-large answers a question in about 0.85 s on the build workstation's CPU (the build record measured CPU_FROZEN_EVAL s to score the 150 test questions and CPU_ADAPT s for the four epochs of fine-tuning over 240 questions with per-epoch validation scoring); the whole default path took CPU_TOTAL s there with the snapshot and the shard already cached, and GPU_TOTAL s on an RTX 5070 Ti. A 2-vCPU hosted runtime will take a multiple of the workstation figure. The pinned `torch==2.14.0` install and the 1.35 GB checkpoint are the large downloads of the run; the WikiSQL shard adds 3.6 MB.",
+        "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). The default path runs on CPU (float32) and uses CUDA automatically when available (also float32). CPU is slow: TAPAS-large answers a question in about 0.85 s on the build workstation's CPU (the build record measured 76 s to score the 150 test questions and 1,401 s for the four epochs of fine-tuning over 240 questions with per-epoch validation scoring); the whole default path took 1,865 s there with the snapshot and the shard already cached, and 148 s on an RTX 5070 Ti. A 2-vCPU hosted runtime will take a multiple of the workstation figure. The pinned `torch==2.14.0` install and the 1.35 GB checkpoint are the large downloads of the run; the WikiSQL shard adds 3.6 MB.",
         "- **Knowledge:** basic Python; what a sigmoid threshold and an argmax are and why neither is a calibrated probability; that an aggregation over selected cells is arithmetic the pipeline performs, not a model output; what denotation accuracy measures and why one seeded split gives no dispersion.",
         "- **Data contract:** records are `{id, table, question, answer}` with an optional `category` — `table` is `{column: [cells]}` with every header and cell a str (at most `MAX_ROWS` = 64 rows, `MAX_COLUMNS` = 32 columns, `MAX_CELL_CHARS` = 200 characters per cell), `question` a non-empty str of at most `MAX_QUERY_CHARS` = 500 characters, `answer` = `{aggregation: NONE|SUM|AVERAGE|COUNT, coordinates: [[row, col], ...], denotation: [cell, ...] | number}` where a `NONE` denotation is the selected cells and an operator denotation is the number the operator produces from them (validated). Ids match `[A-Za-z0-9_.:-]{1,64}` and are unique; a dataset needs 8..20,000 records; splitting is by table (normalised content) so no table lands in two splits; a table whose gold cells fall past the `MAX_TOKENS` = 512 truncation point is refused at training time. BYOD accepts one JSONL file (one record per line) or a JSON list in that shape.",
         "- **Validation is structural, not semantic:** every table, question and answer is checked for shape and arithmetic consistency, but nothing checks that an answer is right — a mislabelled set is fine-tuned on without complaint.",
@@ -334,7 +334,9 @@ TEMPLATE = {
                 "per-type rows, where `average`, `min` and `sum` each gained one question, `count` and `max` did not move and "
                 "lookups stayed at 0.92. The cell asserts the adapted aggregation accuracy is above the frozen one; denotation "
                 "accuracy is reported, not asserted, because on 150 questions it moves by single questions and the build "
-                "record's other draws moved it either way. One seeded split gives **no dispersion estimate**; the deltas are "
+                "record's other draws moved it either way — the CPU pre-flight of this very notebook kept it at 0.82 (epoch 3 "
+                "selected, aggregation accuracy 0.57 → 0.83) where the GPU run gained three questions (epoch 2, 0.57 → 0.81). "
+                "One seeded split gives **no dispersion estimate**; the deltas are "
                 "sample-sanity evidence that the adaptation contract works, not a benchmark, and a gain on six question types "
                 "over Wikipedia tables says nothing about your tables until you measure them."
             ),
