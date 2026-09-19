@@ -329,7 +329,7 @@ def test_evaluate_runs_every_record_through_answer_and_scores_it():
         pipe.evaluate([{"id": "x"}] * 8)
 
 
-def test_adapt_and_save_artifact_require_a_loaded_model():
+def test_adapt_and_save_artifact_require_a_loaded_model(forbid_model_imports):
     pipe = TAPASTableQAPipeline(_ScriptedRunner([(0, 0)], 0), "cpu", "injected")
     with pytest.raises(RuntimeError, match="no loaded model"):
         pipe.adapt(_records())

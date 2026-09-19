@@ -638,11 +638,11 @@ class TAPASTableQAPipeline:
         metrics; the epoch with the highest validation score — the mean of denotation, aggregation and cell
         accuracy, a steadier selector than denotation accuracy alone on a small split — is kept (the final one
         without a validation split). On any exception the frozen weights are restored."""
+        model, _tokenizer, _frame_cls = self._require_model()  # refuse before importing torch
         import torch
 
         from .samples import validate_dataset
 
-        model, _tokenizer, _frame_cls = self._require_model()
         if isinstance(epochs, bool) or not isinstance(epochs, int) or not 1 <= epochs <= 50:
             raise ValueError("epochs must be an int in 1..50")
         if not isinstance(lr, int | float) or not 0.0 < float(lr) <= 1e-2:
@@ -741,10 +741,10 @@ class TAPASTableQAPipeline:
     def save_artifact(self, output_dir: str | Path, metadata: Mapping[str, Any] | None = None) -> Path:
         """Write the trained tensors as safetensors plus a manifest naming the base, the digests and the training
         configuration. Requires a prior `adapt`."""
+        model, _tokenizer, _frame_cls = self._require_model()  # refuse before importing torch
         import torch
         from safetensors.torch import save_file
 
-        model, _tokenizer, _frame_cls = self._require_model()
         if self.adapter is None:
             raise RuntimeError("nothing to save: call adapt() first")
         out = Path(output_dir)
@@ -773,9 +773,9 @@ class TAPASTableQAPipeline:
     def load_artifact(self, artifact_dir: str | Path) -> dict[str, Any]:
         """Overlay a saved adapter onto this (freshly loaded) pipeline after checking its manifest, digest and exact
         tensor set. Refuses tensors outside the encoder blocks and heads."""
+        model, _tokenizer, _frame_cls = self._require_model()  # refuse before importing safetensors
         from safetensors.torch import load_file
 
-        model, _tokenizer, _frame_cls = self._require_model()
         artifact = Path(artifact_dir)
         manifest_path = artifact / ADAPTER_MANIFEST
         if not manifest_path.is_file():
