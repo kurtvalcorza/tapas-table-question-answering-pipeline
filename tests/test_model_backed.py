@@ -11,10 +11,10 @@ import json
 import shutil
 
 import pytest
-import torch
 
 from tapas_table_qa_pipeline import DEFAULT_WEIGHTS_DIR, WEIGHT_FILE, TAPASTableQAPipeline
 
+torch = pytest.importorskip("torch")
 pytest.importorskip("transformers")
 if not (DEFAULT_WEIGHTS_DIR / WEIGHT_FILE).is_file():
     pytest.skip("snapshot not staged", allow_module_level=True)
