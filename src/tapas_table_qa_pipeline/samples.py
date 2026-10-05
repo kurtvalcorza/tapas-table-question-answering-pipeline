@@ -375,6 +375,32 @@ def check_split_disjoint(splits: Mapping[str, Sequence[Mapping[str, Any]]]) -> d
     return {name: len(records) for name, records in splits.items()}
 
 
+def _split_tables(n_tables: int, val_fraction: float, test_fraction: float) -> tuple[int, int, int]:
+    """(train, validation, test) table counts that `split_dataset` cuts from `n_tables` distinct tables."""
+    n_test = max(1, round(n_tables * test_fraction))
+    n_val = round(n_tables * val_fraction)
+    return n_tables - n_test - n_val, n_val, n_test
+
+
+def min_byod_records(*, val_fraction: float = 0.15, test_fraction: float = 0.2) -> dict[str, int]:
+    """The smallest BYOD set `split_dataset` always accepts when every table carries the same number of questions:
+    `MIN_RECORDS` training questions on the training tables and (when `val_fraction` > 0) at least one validation
+    table, after at least one test table is held out. With the default fractions that is 12 questions: one per
+    table over 12 tables (split 8 / 2 / 2), or two per table over 6 tables (split 4 / 1 / 1)."""
+    best: dict[str, int] | None = None
+    for per_table in range(1, MIN_RECORDS + 1):
+        for n in range(2, MAX_RECORDS + 1):
+            train, val, test = _split_tables(n, val_fraction, test_fraction)
+            if train >= 1 and train * per_table >= MIN_RECORDS and (val >= 1 or val_fraction == 0):
+                if best is None or n * per_table < best["total"]:
+                    best = {"total": n * per_table, "tables": n, "questions_per_table": per_table,
+                            "train_tables": train, "validation_tables": val, "test_tables": test}
+                break
+    if best is None:
+        raise ValueError("no dataset size satisfies these fractions")
+    return best
+
+
 def split_dataset(
     records: Sequence[Mapping[str, Any]],
     *,
@@ -393,20 +419,31 @@ def split_dataset(
     keys = sorted(by_table)
     random.Random(seed).shuffle(keys)
     n = len(keys)
-    n_test = max(1, round(n * test_fraction))
-    n_val = round(n * val_fraction)
-    if n - n_test - n_val < 1:
-        raise ValueError(f"{n} distinct tables are too few to split into train/validation/test")
+    _n_train, n_val, n_test = _split_tables(n, val_fraction, test_fraction)
+    need = min_byod_records(val_fraction=val_fraction, test_fraction=test_fraction)
+    advice = (
+        f"supply at least {need['total']} questions over {need['tables']} tables "
+        f"({need['questions_per_table']} per table), or more tables"
+    )
+    if n - n_test - n_val < 1 or (val_fraction > 0 and n_val < 1):
+        raise ValueError(f"{n} distinct tables are too few to split into train/validation/test — {advice}")
     out = {"train": [], "validation": [], "test": []}
     for i, key in enumerate(keys):
         name = "test" if i < n_test else "validation" if i < n_test + n_val else "train"
         out[name].extend(by_table[key])
+    if len(out["train"]) < MIN_RECORDS:
+        raise ValueError(
+            f"the split leaves {len(out['train'])} training questions on {n - n_test - n_val} training table(s); "
+            f"at least {MIN_RECORDS} are required — {advice}"
+        )
     return out
 
 
 def load_byod_dataset(path: str | Path) -> list[dict[str, Any]]:
-    """Read records from a JSONL file (one record per line) or a JSON list; validation happens downstream."""
-    text = Path(path).read_text(encoding="utf-8")
+    """Read records from a JSONL file (one record per line) or a JSON list; validation happens downstream. A UTF-8
+    byte-order mark is accepted, and a malformed line is refused with its line number in the file."""
+    source = Path(path)
+    text = source.read_text(encoding="utf-8-sig")
     stripped = text.strip()
     if stripped.startswith("["):
         try:
@@ -417,9 +454,22 @@ def load_byod_dataset(path: str | Path) -> list[dict[str, Any]]:
             if any(not isinstance(r, Mapping) for r in data):
                 raise ValueError("each JSONL line must be a record object")
             return data
-    rows = [json.loads(line) for line in text.splitlines() if line.strip()]
-    if any(not isinstance(r, Mapping) for r in rows):
-        raise ValueError("each JSONL line must be a record object")
+    rows = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{source.name} line {number}: not valid JSON ({exc.msg} at column {exc.colno}); each line must be "
+                "one record object"
+            ) from None
+        if not isinstance(row, Mapping):
+            raise ValueError(f"{source.name} line {number}: each JSONL line must be a record object")
+        rows.append(row)
+    if not rows:
+        raise ValueError(f"{source.name} holds no records")
     return rows
 
 
