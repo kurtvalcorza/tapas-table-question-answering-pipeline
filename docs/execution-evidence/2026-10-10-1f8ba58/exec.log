@@ -1,0 +1,68 @@
+[colab] Parsing notebook '/home/kurt/colab-runs/tapas-table-question-answering-pipeline-1f8ba58-71a2c2/tapas_table_qa_colab_1f8ba58_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/13 - Infrastructure: build (or reuse) the isolated environment and route later cells to it...
+{'isolated_environment': '/content/dimer_isolated_env_ec639047a736', 'reused': False, 'isolated_python': '3.12.12', 'kernel_python': '3.13.15', 'locked_packages': 51, 'setup_seconds': 98}
+{'routed_to': '/content/dimer_isolated_env_ec639047a736/bin/python', 'worker_pid': 3021, 'worker_reused': False}
+[colab] Executing cell 2/13 - Infrastructure: record the runtime...
+{'notebook_source': {'repository': 'tapas-table-question-answering-pipeline', 'repository_revision': '144c64e598e485ef10d8dcd50322c5e1c4d30159', 'embedded_module': 'src/tapas_table_qa_pipeline/pipeline.py', 'embedded_modules': ['src/tapas_table_qa_pipeline/pipeline.py', 'src/tapas_table_qa_pipeline/metrics.py', 'src/tapas_table_qa_pipeline/samples.py'], 'module_sha256': 'd160a7493d0348429862846a82119e5f115c5d492d2bf4f120b4757df23ec8df', 'generator': 'build_notebook.py/2.2', 'notebook_spec': '2.2'}, 'python': '3.12.12', 'executable': '/content/dimer_isolated_env_ec639047a736/bin/python', 'torch': '2.14.0+cu130', 'transformers': '4.57.6', 'pandas': '3.0.5', 'cuda': True}
+[colab] Executing cell 3/13 - tapas_table_qa-08...
+[colab] Executing cell 4/13 - tapas_table_qa-10...
+[colab] Executing cell 5/13 - tapas_table_qa-12...
+[colab] Executing cell 6/13 - Infrastructure: stage and digest-verify the pinned snapshot, then load the model...
+{'model_id': 'google/tapas-large-finetuned-wtq', 'revision': 'f58317ab2577d17647d9acafa790c744a0388b30', 'license': 'apache-2.0', 'files': 6, 'total_bytes': 1347256837}
+{'weights_dir': '/content/weights/tapas-large-wtq', 'fetched': ['README.md', 'config.json', 'model.safetensors', 'special_tokens_map.json', 'tokenizer_config.json', 'vocab.txt']}
+{'verified_files': 6, 'revision': 'f58317ab2577d17647d9acafa790c744a0388b30'}
+{'device': 'cuda:0', 'source': 'local-snapshot'}
+[colab] Executing cell 7/13 - tapas_table_qa-16...
+{'data_source': 'WikiSQL (validation shard): Salesforce/wikisql @ 48cfb60afd0d (BSD-3-Clause (Zhong, Xiong & Socher 2017, https://github.com/salesforce/WikiSQL))', 'raw_rows': {'shard_bytes': 3630670, 'questions': 8421, 'tables': 2630, 'candidates': 4972}, 'splits': {'train': 240, 'validation': 90, 'test': 150}}
+{'train': {'n': 240, 'tables': 209, 'categories': {'average': 32, 'count': 32, 'lookup': 80, 'max': 32, 'min': 32, 'sum': 32}, 'aggregations': {'AVERAGE': 32, 'COUNT': 32, 'NONE': 144, 'SUM': 32}, 'table_shape': {'rows': [5, 20], 'columns': [5, 12]}, 'digest': 'fff7f1c4d065e389...'}}
+{'validation': {'n': 90, 'tables': 82, 'categories': {'average': 15, 'count': 15, 'lookup': 15, 'max': 15, 'min': 15, 'sum': 15}, 'aggregations': {'AVERAGE': 15, 'COUNT': 15, 'NONE': 45, 'SUM': 15}, 'table_shape': {'rows': [5, 20], 'columns': [5, 11]}, 'digest': '64c0e977474c0d85...'}}
+{'test': {'n': 150, 'tables': 127, 'categories': {'average': 25, 'count': 25, 'lookup': 25, 'max': 25, 'min': 25, 'sum': 25}, 'aggregations': {'AVERAGE': 25, 'COUNT': 25, 'NONE': 75, 'SUM': 25}, 'table_shape': {'rows': [5, 20], 'columns': [5, 12]}, 'digest': '90264c044ae8d6e9...'}}
+{'example': {'id': 'wikisql-val-2562', 'category': 'lookup', 'question': 'When was the game where the away team had a score of 13.8 (86)?', 'sql': 'SELECT Date FROM table WHERE Away team score = 13.8 (86)', 'answer': {'aggregation': 'NONE', 'coordinates': [[3, 6]], 'denotation': ['24 June 1950']}, 'columns': ['Home team', 'Home team score', 'Away team', 'Away team score', 'Venue', 'Crowd', 'Date'], 'rows': 6}}
+{'probe': 'duplicate id', 'rejected': "duplicate id 'same'"}
+{'probe': 'coordinate outside the table', 'rejected': 'records[0]: coordinate [999, 0] outside the 6x7 table'}
+{'probe': 'operator denotation disagrees with its cells', 'rejected': 'records[1]: COUNT of the selected cells is 1.0, denotation says 1000000000.0'}
+{'probe': 'too small', 'rejected': '3 records; 8..20000 are required'}
+[colab] Executing cell 8/13 - tapas_table_qa-19...
+{'MAX_ROWS': 64, 'MAX_COLUMNS': 32, 'MAX_TOKENS': 512, 'MAX_QUERY_CHARS': 500, 'MAX_CELL_CHARS': 200, 'AGGREGATIONS': ('NONE', 'SUM', 'AVERAGE', 'COUNT'), 'CELL_THRESHOLD': 0.5, 'MIN_RECORDS': 8, 'MAX_RECORDS': 20000, 'device': 'cuda:0'}
+{'sample_sha256': 'a750483c64b13ccd...', 'manifest_verdict': 'accepted', 'findings': 1}
+frozen q1: NONE     cells=['Cebu'] numeric_answer=None tokens=52 truncated=False seconds=0.91
+frozen q2: COUNT    cells=['Manila', 'Cebu', 'Davao', 'Baguio'] numeric_answer=4.0 tokens=51 truncated=False seconds=0.16
+frozen q3: SUM      cells=['1,846,513', '1,776,949'] numeric_answer=3623462.0 tokens=56 truncated=False seconds=0.14
+{'decision_rule': 'cell selected when its mean token sigmoid probability > CELL_THRESHOLD=0.5; aggregation operator = argmax over the four aggregation logits; numeric answer computed by the pipeline from the selected cells (COUNT = number of cells; SUM/AVERAGE parse each cell as a number, else None)', 'numeric_answer_source': 'computed by the pipeline from the selected cells, not emitted by the model'}
+{'frozen_scene': {'denotation_accuracy': 1.0}, 'verdict': 'sample-sanity'}
+[colab] Executing cell 9/13 - tapas_table_qa-22...
+{'first_cell_baseline': {'accuracy': 0.073, 'aggregation_accuracy': 0.5, 'cell_accuracy': 0.013}, 'n': 150, 'note': 'first cell of the first column, NONE'}
+{'keyword_lookup_baseline': {'accuracy': 0.367, 'aggregation_accuracy': 0.733, 'cell_accuracy': 0.353}, 'by_category': {'average': 0.24, 'count': 0.36, 'lookup': 0.44, 'max': 0.28, 'min': 0.52, 'sum': 0.36}, 'note': 'header-overlap column, verbatim-cell rows, wording-based operator'}
+{'frozen_model_test': {'accuracy': 0.82, 'aggregation_accuracy': 0.567, 'cell_accuracy': 0.82}, 'n': 150, 'verdict': 'measured', 'truncated': 0, 'seconds': 24.8}
+{'definitions': {'accuracy': "fraction of questions whose pipeline answer matches the record's denotation (numeric to 1e-6 for an operator, otherwise the same multiset of cell strings after lower-casing); in 0..1", 'aggregation_accuracy': "fraction of questions whose predicted operator equals the record's; in 0..1", 'cell_accuracy': "fraction of questions whose selected coordinates equal the record's as a set; in 0..1"}}
+{'by_category_frozen': {'average': {'n': 25, 'accuracy': 0.88, 'aggregation': 0.76, 'cells': 0.88}, 'count': {'n': 25, 'accuracy': 0.64, 'aggregation': 0.72, 'cells': 0.76}, 'lookup': {'n': 25, 'accuracy': 0.92, 'aggregation': 0.76, 'cells': 0.84}, 'max': {'n': 25, 'accuracy': 0.8, 'aggregation': 0.12, 'cells': 0.8}, 'min': {'n': 25, 'accuracy': 0.84, 'aggregation': 0.16, 'cells': 0.84}, 'sum': {'n': 25, 'accuracy': 0.84, 'aggregation': 0.88, 'cells': 0.8}}}
+{'frozen_vs_baselines': {'accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}}
+[colab] Executing cell 10/13 - tapas_table_qa-25...
+{'epoch': 0, 'train_loss': None, 'val_accuracy': 0.789, 'val_aggregation_accuracy': 0.567, 'val_cell_accuracy': 0.767, 'val_score': 0.707, 'note': 'frozen model'}
+Truncation was not explicitly activated but `max_length` is provided a specific value, please use `truncation=True` to explicitly truncate examples to max length. Defaulting to 'longest_first' truncation strategy. If you encode pairs of sequences (GLUE-style) with the tokenizer you can select this strategy more precisely by providing a specific strategy to `truncation`.
+{'epoch': 1, 'train_loss': 2.6819, 'val_accuracy': 0.756, 'val_aggregation_accuracy': 0.811, 'val_cell_accuracy': 0.744, 'val_score': 0.77}
+{'epoch': 2, 'train_loss': 0.8522, 'val_accuracy': 0.811, 'val_aggregation_accuracy': 0.789, 'val_cell_accuracy': 0.778, 'val_score': 0.793}
+{'epoch': 3, 'train_loss': 0.5294, 'val_accuracy': 0.822, 'val_aggregation_accuracy': 0.844, 'val_cell_accuracy': 0.822, 'val_score': 0.83}
+{'epoch': 4, 'train_loss': 0.4315, 'val_accuracy': 0.811, 'val_aggregation_accuracy': 0.822, 'val_cell_accuracy': 0.822, 'val_score': 0.819}
+{'trainable_parameters': 25198598, 'total_parameters': 336734214, 'best_epoch': 3, 'selection': 'highest validation score (mean of denotation, aggregation and cell accuracy)', 'started_from': 'pinned base', 'seconds': 204.4}
+[colab] Executing cell 11/13 - tapas_table_qa-28...
+{'accuracy': {'first_cell': 0.073, 'keyword': 0.367, 'frozen': 0.82, 'adapted': 0.813}}
+{'aggregation_accuracy': {'first_cell': 0.5, 'keyword': 0.733, 'frozen': 0.567, 'adapted': 0.807}}
+{'cell_accuracy': {'first_cell': 0.013, 'keyword': 0.353, 'frozen': 0.82, 'adapted': 0.833}}
+{'delta_vs_frozen': {'accuracy': -0.007, 'aggregation_accuracy': 0.24, 'cell_accuracy': 0.013}}
+{'by_category': {'average': {'n': 25, 'frozen': 0.88, 'adapted': 0.92, 'frozen_aggregation': 0.76, 'adapted_aggregation': 0.76}, 'count': {'n': 25, 'frozen': 0.64, 'adapted': 0.64, 'frozen_aggregation': 0.72, 'adapted_aggregation': 0.64}, 'lookup': {'n': 25, 'frozen': 0.92, 'adapted': 0.88, 'frozen_aggregation': 0.76, 'adapted_aggregation': 1.0}, 'max': {'n': 25, 'frozen': 0.8, 'adapted': 0.76, 'frozen_aggregation': 0.12, 'adapted_aggregation': 0.92}, 'min': {'n': 25, 'frozen': 0.84, 'adapted': 0.84, 'frozen_aggregation': 0.16, 'adapted_aggregation': 0.96}, 'sum': {'n': 25, 'frozen': 0.84, 'adapted': 0.84, 'frozen_aggregation': 0.88, 'adapted_aggregation': 0.56}}}
+{'verdicts': {'frozen_vs_baselines': {'accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}, 'adapted_vs_frozen_accuracy': 'worse', 'adapted_vs_frozen_aggregation_accuracy': 'improved', 'adapted_vs_frozen_cell_accuracy': 'improved'}}
+{'operator_regressions': ['count', 'sum']}
+{'verdicts': {'frozen_vs_baselines': {'accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}, 'adapted_vs_frozen_accuracy': 'worse', 'adapted_vs_frozen_aggregation_accuracy': 'improved', 'adapted_vs_frozen_cell_accuracy': 'improved'}, 'operator_regressions': ['count', 'sum']}
+{'report': 'outputs/tapas_table_qa_evaluation_report.json'}
+[colab] Executing cell 12/13 - tapas_table_qa-31...
+adapted q1: NONE     cells=['Cebu'] numeric_answer=None tokens=52 truncated=False seconds=0.13
+adapted q2: COUNT    cells=['Manila', 'Cebu', 'Davao', 'Baguio'] numeric_answer=4.0 tokens=51 truncated=False seconds=0.13
+adapted q3: SUM      cells=['1,846,513', '1,776,949'] numeric_answer=3623462.0 tokens=56 truncated=False seconds=0.13
+{'scene_after_adaptation': {'denotation_accuracy': 1.0}, 'verdict': 'sample-sanity'}
+{'artifact': 'outputs/tapas_table_qa_adapter', 'format': 'org.valcorza.tapas-large-wtq.adapter.v1', 'tensors': 38, 'bytes': 100798688, 'sha256': '18ac4e521883a096...'}
+{'reload_parity': {'identical_answers': 8, 'of': 8}, 'reloaded_best_epoch': 3}
+['tapas_table_qa_adapter', 'tapas_table_qa_answers.csv', 'tapas_table_qa_evaluation_report.json', 'tapas_table_qa_input_manifest.json', 'tapas_table_qa_result.json', 'tapas_table_qa_train.jsonl']
+[colab] Executing cell 13/13 - tapas_table_qa-34...
+{'experiment': 'skipped (RUN_EXPERIMENT = False); the default path above is complete'}
+[colab] Saving notebook with outputs to '/home/kurt/colab-runs/tapas-table-question-answering-pipeline-1f8ba58-71a2c2/tapas_table_qa_colab_1f8ba58_colab-cli-t4_output.ipynb'...
