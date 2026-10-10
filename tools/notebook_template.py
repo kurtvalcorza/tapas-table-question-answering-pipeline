@@ -1,4 +1,4 @@
-"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.0 §4 standalone carrier).
+"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.2 §4 standalone carrier).
 
 Only the task-specific prose and stage cells live here. Runtime install, the embedded package (three
 modules, carried verbatim in dependency order), and the model pin/stage/verify cells are produced by the
@@ -21,6 +21,20 @@ TEMPLATE = {
     "notebook_name": "tapas_table_qa_colab.ipynb",
     "profile": "E2E",
     "mode": "GUIDED",
+    "isolated_runtime": True,
+    "infrastructure_labels": True,
+    # The fleet's uv isolated-environment mechanism (bioclip2-biodiversity-pipeline): managed CPython, a size- and
+    # SHA-256-verified uv wheel, and a lock compiled from the pyproject pins with
+    # `uv pip compile pyproject.toml --python-version 3.12 --python-platform x86_64-manylinux_2_28 --generate-hashes
+    # --only-binary :all: -o tutorials/requirements-colab.lock.txt`.
+    "managed_python": "3.12.12",
+    "uv": {
+        "version": "0.12.15",
+        "url": "https://files.pythonhosted.org/packages/1e/fd/432451d732917c49152a291de3ef171aa6b0f1a22d39780fb2c1f085ca4c/uv-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "bytes": 20081404,
+        "sha256": "aee9802f46bae436bd91751bb33ddeb379ef1596b5c19df193219d545d244b60",
+    },
+    "lock": "tutorials/requirements-colab.lock.txt",
     "pipeline_class": "TAPASTableQAPipeline",
     "weights_key": "tapas-large-wtq",
     "modules": ["pipeline.py", "metrics.py", "samples.py"],
@@ -51,7 +65,8 @@ TEMPLATE = {
     ],
     "capability": "table question answering (one table of string cells + one question → selected cells, one aggregation operator NONE/SUM/AVERAGE/COUNT, and a pipeline-computed numeric answer) and bounded supervised fine-tuning of the last encoder blocks and heads on a labelled table-question set, using the pinned TAPAS-large WTQ weights",
     "run_all": (
-        "Selecting **Run all** in a fresh supported runtime installs the pinned dependencies, stages and digest-verifies the "
+        "Selecting **Run all** in a fresh supported runtime builds an isolated environment from the hash-locked pins (nothing is "
+        "installed into the notebook's own Python, so no restart is needed and Run all completes in one pass), stages and digest-verifies the "
         "pinned `google/tapas-large-finetuned-wtq` snapshot (a 1.35 GB `model.safetensors`; no pickle is opened anywhere), fetches "
         "the pinned WikiSQL validation shard from the Hugging Face Hub (3.6 MB, refused on any byte-size or SHA-256 mismatch), "
         "executes its SQL programmes in pure Python for the gold cells and values, draws a table-disjoint sample of 240 / 90 / 150 "
@@ -62,14 +77,16 @@ TEMPLATE = {
         "scores the held-out questions again per type, re-answers the city table with the adapted model, exports the adapter "
         "as safetensors with a manifest, and reloads that artifact into a fresh pipeline to verify answer parity. The default "
         "path needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
-        "(NOTEBOOK_SPEC 2.0 §5). TAPAS-large is a 24-layer encoder over up to 512 tokens: on the build workstation's CPU the "
+        "(NOTEBOOK_SPEC 2.2 §5). TAPAS-large is a 24-layer encoder over up to 512 tokens: on the build workstation's CPU the "
         "whole path took about 31 minutes after the downloads (expect a multiple of that on a 2-vCPU hosted runtime); "
         "a CUDA runtime is used automatically when present and finishes in a few minutes."
     ),
     "byod": (
-        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 and re-run from that cell to upload one "
-        "JSONL file of `{id, table, question, answer, category?}` records (Section 4 and the Prerequisites state the shape) — "
-        "at least eight questions over at least two tables. They pass through the same validation, table-disjoint split, "
+        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 and either set `BYOD_PATH` to a JSONL file in "
+        "the runtime (Colab, Kaggle or Jupyter) or leave it empty to upload one file in Colab, then choose **Run after** from "
+        "that cell (it first puts the model back to the pinned base) to supply one JSONL file of `{id, table, question, answer, "
+        "category?}` records (Section 4 and the Prerequisites state the shape) — at least **12 questions: one per table over 12 "
+        "tables, or two per table over 6 tables** (the split is by table, and the training tables must hold 8 questions). They pass through the same validation, table-disjoint split, "
         "baselines, fine-tuning, held-out evaluation, artifact export and reload-parity cells as the WikiSQL sample. Uploaded "
         "tables stay inside this runtime. BYOD is optional and never part of the default path."
     ),
@@ -98,6 +115,13 @@ TEMPLATE = {
         "**Snapshot note:** the pinned revision ships `model.safetensors` (a 6-file manifest) — no pickle is opened anywhere "
         "in this notebook. Section 3 stages and digest-verifies those files before the tokenizer or the model is constructed."
     ),
+    "guided": {
+        "opening": [
+            (
+                "**Who this notebook is for.** A learner who knows basic Python, has used Colab or Jupyter, and wants to see how a pretrained table-QA model is fine-tuned with a small labelled set — what it learns, what it can unlearn, and how to tell from held-out numbers per question type. No prior experience with TAPAS or fine-tuning is assumed; each term is explained where it first matters and again in the **Glossary** at the end. A GPU runtime is strongly recommended; on CPU the run takes over half an hour.\n\n**Input → Model → Output.**\n\n| | Answering | Fine-tuning |\n|---|---|---|\n| Input | one table of string cells (≤ 64 rows, ≤ 32 columns) and one question | labelled questions: 240 training and 90 validation WikiSQL questions in the sample, split by table |\n| Model | TAPAS-large (WTQ): a 24-layer encoder over the flattened table with a cell-selection head and an aggregation head | the last two encoder blocks and the three heads trained with the model's own weak-supervision loss |\n| Output | selected cells, one operator (`NONE`, `SUM`, `AVERAGE`, `COUNT`) and the pipeline's arithmetic over the cells — never an abstention | a safetensors adapter, and denotation, operator and cell accuracy per question type beside two baselines |\n\n**How to use this notebook.** Choose a runtime (a GPU is strongly recommended), then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed. Sections 1–3 are **infrastructure** — the isolated environment, the carried package and the model snapshot — and their cells are collapsed; you may run them without studying them. The learning path starts in Section 4. Form fields (`# @param`) are the only values meant to be edited, and the defaults reproduce the recorded run. Before each principal result the notebook asks you to **Predict**; after it come **What to notice** and a collapsible **Check your reasoning** with a worked answer that names the run it quotes — the Kaggle T4 release run of 20 September 2026 or the build record. Section 10 is a **change-one-thing experiment**, off by default. **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end. Writing your predictions down is optional.\n\n**Roadmap:** 1–3 infrastructure → 4 the WikiSQL sample and a table-level split *(evaluation practice)* → 5 the inference contract on a synthetic table *(core concept: cells, operator, arithmetic)* → 6 two baselines and the frozen model per question type *(evaluation practice)* → 7 bounded fine-tuning *(core concept: weak supervision)* → 8 held-out evaluation per type → 9 re-answer, export and reload *(engineering)* → 10 change one thing (optional) → conclude."
+            )
+        ]
+    },
     "learning_objectives": (
         "install the pinned runtime; read what the carried package guarantees; stage and digest-verify the immutable "
         "upstream snapshot; fetch a digest-pinned labelled table-question set, execute its programmes for gold answers, validate "
@@ -117,9 +141,10 @@ TEMPLATE = {
         "tables. The repository exposes none of these."
     ),
     "prerequisites": [
-        "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). The default path runs on CPU (float32) and uses CUDA automatically when available (also float32). CPU is slow: TAPAS-large answers a question in about 0.85 s on the build workstation's CPU (the build record measured 76 s to score the 150 test questions and 1,401 s for the four epochs of fine-tuning over 240 questions with per-epoch validation scoring); the whole default path took 1,865 s there with the snapshot and the shard already cached, and 148 s on an RTX 5070 Ti. A 2-vCPU hosted runtime will take a multiple of the workstation figure. The pinned `torch==2.14.0` install and the 1.35 GB checkpoint are the large downloads of the run; the WikiSQL shard adds 3.6 MB.",
+        "- **Learner:** basic Python and Colab or Jupyter familiarity; no prior experience with TAPAS or fine-tuning. The notebook explains cell selection, the aggregation operator, denotation, weak supervision and the adapter where they are first used; the Glossary repeats them.",
+        "- **Runtime:** a fresh supported **Linux x86_64** runtime (Google Colab, Kaggle or Linux Jupyter); a GPU runtime is strongly recommended. Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so the kernel's own Python version does not matter and nothing is installed into it. The default path runs on CPU (float32) and uses CUDA automatically when available (also float32). CPU is slow: TAPAS-large answers a question in about 0.85 s on the build workstation's CPU (the build record measured 76 s to score the 150 test questions and 1,401 s for the four epochs of fine-tuning over 240 questions with per-epoch validation scoring); the whole default path took 1,865 s there with the snapshot and the shard already cached, and 148 s on an RTX 5070 Ti. A 2-vCPU hosted runtime will take a multiple of the workstation figure. The pinned `torch==2.14.0` install and the 1.35 GB checkpoint are the large downloads of the run; the WikiSQL shard adds 3.6 MB.",
         "- **Knowledge:** basic Python; what a sigmoid threshold and an argmax are and why neither is a calibrated probability; that an aggregation over selected cells is arithmetic the pipeline performs, not a model output; what denotation accuracy measures and why one seeded split gives no dispersion.",
-        "- **Data contract:** records are `{id, table, question, answer}` with an optional `category` — `table` is `{column: [cells]}` with every header and cell a str (at most `MAX_ROWS` = 64 rows, `MAX_COLUMNS` = 32 columns, `MAX_CELL_CHARS` = 200 characters per cell), `question` a non-empty str of at most `MAX_QUERY_CHARS` = 500 characters, `answer` = `{aggregation: NONE|SUM|AVERAGE|COUNT, coordinates: [[row, col], ...], denotation: [cell, ...] | number}` where a `NONE` denotation is the selected cells and an operator denotation is the number the operator produces from them (validated). Ids match `[A-Za-z0-9_.:-]{1,64}` and are unique; a dataset needs 8..20,000 records; splitting is by table (normalised content) so no table lands in two splits; a table whose gold cells fall past the `MAX_TOKENS` = 512 truncation point is refused at training time. BYOD accepts one JSONL file (one record per line) or a JSON list in that shape.",
+        "- **Data contract:** records are `{id, table, question, answer}` with an optional `category` — `table` is `{column: [cells]}` with every header and cell a str (at most `MAX_ROWS` = 64 rows, `MAX_COLUMNS` = 32 columns, `MAX_CELL_CHARS` = 200 characters per cell), `question` a non-empty str of at most `MAX_QUERY_CHARS` = 500 characters, `answer` = `{aggregation: NONE|SUM|AVERAGE|COUNT, coordinates: [[row, col], ...], denotation: [cell, ...] | number}` where a `NONE` denotation is the selected cells and an operator denotation is the number the operator produces from them (validated). Ids match `[A-Za-z0-9_.:-]{1,64}` and are unique; a training split needs 8..20,000 records and validation and test at least one each, so with the default 15 % + 20 % table hold-out the effective BYOD minimum is **12 questions — one per table over 12 tables, or two per table over 6** (`min_byod_records()` computes it); splitting is by table (normalised content) so no table lands in two splits; a table whose gold cells fall past the `MAX_TOKENS` = 512 truncation point is refused at training time. BYOD accepts one JSONL file (one record per line, UTF-8 with or without a byte-order mark; a broken line is refused with its line number) or a JSON list in that shape. Numbers parse as plain digits with an optional sign, decimal point and thousands commas; `−12`, `$12`, `(12)`, `1 234` and `1.2e3` do not, and such cells are reported as `unparsed_cells` (TPQ-S2).",
         "- **Validation is structural, not semantic:** every table, question and answer is checked for shape and arithmetic consistency, but nothing checks that an answer is right — a mislabelled set is fine-tuned on without complaint.",
         "- **Privacy:** Do not upload confidential or restricted data to a hosted runtime unless you are authorized to process it there. The default path uploads nothing.",
         "- **External access (data):** besides the model snapshot, the default path fetches one parquet file from the Hugging Face Hub dataset repository `Salesforce/wikisql` at the immutable revision `48cfb60afd0d5f9d2231ca90f76edf9f975181bc` (`default/validation/0000.parquet`, 3,630,670 bytes, SHA-256 `ed524cc7…`, pinned in the carried `samples.py` and refused on any mismatch). WikiSQL is BSD-3-Clause (Zhong, Xiong & Socher 2017); nothing is redistributed by this repository.",
@@ -141,7 +166,14 @@ TEMPLATE = {
                 "to `outputs/{stem}_train.jsonl` in the BYOD shape.\n\n"
                 "Look for: 4,972 candidates, the six categories with 80 / 32 in training and 15 / 25 elsewhere, three digests, "
                 "and four refusal probes — a duplicate id, a coordinate outside the table, an operator denotation that "
-                "disagrees with its cells, and a dataset too small to use — each rejected before the model does anything."
+                "disagrees with its cells, and a dataset too small to use — each rejected before the model does anything.\n\n"
+                "*Evaluation practice.* **Bring your own data (optional):** set `USE_BYOD = True` and either `BYOD_PATH` (a JSONL "
+                "file in this runtime — this works on Colab, Kaggle and Jupyter) or leave `BYOD_PATH` empty to upload exactly one "
+                "file through the Colab dialog; then choose **Run after** from this cell. This cell first puts the model back to "
+                "the pinned base, so Section 6's frozen row and Section 7's epoch 0 are the untouched checkpoint. The effective "
+                "minimum is 12 questions (one per table over 12 tables, or two per table over 6).\n\n"
+                "**Predict before running:** several questions share a table. Why does the split keep every question of a table "
+                "on one side?"
             ),
             "code": (
                 "import csv\n"
@@ -149,19 +181,38 @@ TEMPLATE = {
                 "import json\n"
                 "import time\n\n"
                 "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
+                "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "SPLIT_SEED = 42  # @param {{type:\"integer\"}}\n\n"
                 "os.makedirs('outputs', exist_ok=True)\n"
+                "# A re-run after Section 7 (BYOD, or a new split): Section 6's frozen row and Section 7's epoch 0 must be the pinned base.\n"
+                "had_adapter = pipe.adapter is not None\n"
+                "restored_tensors = pipe.restore_base()\n"
+                "if had_adapter or restored_tensors:\n"
+                "    print({{'restored_pinned_base': len(restored_tensors), 'note': 'the fine-tuned encoder blocks and heads were put back to the checkpoint; Sections 5-7 start from it again'}})\n"
                 "if USE_BYOD:\n"
-                "    from google.colab import files\n"
-                "    uploaded = files.upload()\n"
-                "    file_name, payload = next(iter(uploaded.items()))\n"
-                "    byod_path = Path('work') / 'byod.jsonl'\n"
-                "    byod_path.parent.mkdir(parents=True, exist_ok=True)\n"
-                "    byod_path.write_bytes(payload)\n"
+                "    if BYOD_PATH.strip():\n"
+                "        byod_path = Path(BYOD_PATH.strip()).expanduser()\n"
+                "        if not byod_path.is_file():\n"
+                "            raise FileNotFoundError(f'BYOD_PATH {{BYOD_PATH!r}} is not a file (relative paths start at {{Path.cwd()}}): give one JSONL file of records.')\n"
+                "        file_name = byod_path.name\n"
+                "    else:\n"
+                "        try:\n"
+                "            from google.colab import files\n"
+                "        except ImportError:\n"
+                "            raise RuntimeError('USE_BYOD is True but BYOD_PATH is empty, and the upload dialog exists only in Google Colab: on Kaggle or Jupyter put the JSONL file in the runtime and set BYOD_PATH to its path.') from None\n"
+                "        uploaded = files.upload() or {{}}\n"
+                "        if len(uploaded) != 1:\n"
+                "            raise ValueError(f'Upload exactly one JSONL file (received {{len(uploaded)}}; a cancelled dialog sends none): run this cell again.')\n"
+                "        file_name, payload = next(iter(uploaded.items()))\n"
+                "        byod_path = Path('work') / 'byod.jsonl'\n"
+                "        byod_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "        byod_path.write_bytes(payload)\n"
                 "    records = load_byod_dataset(byod_path)\n"
                 "    splits = split_dataset(records, seed=SPLIT_SEED)\n"
                 "    data_source = 'BYOD (' + file_name + ')'\n"
-                "    raw_rows = {{'byod': len(records)}}\n"
+                "    raw_rows = {{'byod': len(records), 'effective_minimum': min_byod_records()['total']}}\n"
+                "    if len(splits['test']) < 20:\n"
+                "        print({{'caution': f\"only {{len(splits['test'])}} held-out test questions: accuracy moves in large steps and carries no dispersion estimate; add questions before reading it\"}})\n"
                 "else:\n"
                 "    shard = fetch_corpus(cache_dir='weights/wikisql')\n"
                 "    corpus = read_corpus(shard)\n"
@@ -169,7 +220,8 @@ TEMPLATE = {
                 "    splits = build_sample_dataset(candidates, seed=SPLIT_SEED)\n"
                 "    data_source = f'{{CORPUS_NAME}}: {{CORPUS_REPO}} @ {{CORPUS_REVISION[:12]}} ({{CORPUS_LICENSE}})'\n"
                 "    raw_rows = {{'shard_bytes': len(shard), 'questions': len(corpus), 'tables': len({{r['table']['id'] for r in corpus}}), 'candidates': len(candidates)}}\n"
-                "dataset_manifests = {{name: validate_dataset(part) for name, part in splits.items()}}\n"
+                "# The training split must hold MIN_RECORDS; validation and test only need one question each (split_dataset checks that).\n"
+                "dataset_manifests = {{name: validate_dataset(part, min_records=MIN_RECORDS if name == 'train' else 1) for name, part in splits.items()}}\n"
                 "splits = {{name: manifest['records'] for name, manifest in dataset_manifests.items()}}\n"
                 "disjoint = check_split_disjoint(splits)\n"
                 "train_records, val_records, test_records = splits['train'], splits['validation'], splits['test']\n"
@@ -195,6 +247,11 @@ TEMPLATE = {
         },
         {
             "md": (
+                '**What to notice:** 4,972 candidates, 240 / 90 / 150 questions, the per-split category counts, `shared_tables` of zero and the four refusals.\n\n<details><summary>Check your reasoning</summary>Questions about one table share its layout and often its answers; split by question, the model could be tested on a table it was trained on and the score would measure memory of that table. Keeping every table on one side makes the test a question about unseen tables.</details>'
+            ),
+        },
+        {
+            "md": (
                 "## 5. Answer the synthetic table through the inference contract\n\n"
                 "The inference contract is exercised as the inference-only tutorial exercised it: a 4-row × 3-column table of "
                 "Philippine cities authored in code (the model card's smoke table, population cells with thousands "
@@ -207,7 +264,11 @@ TEMPLATE = {
                 "`numeric_answer` with `numeric_answer_source`, `unparsed_cells`, `aggregation_logits`, `n_tokens`, "
                 "`tokens_before_truncation`, `rows_kept`, `truncated` and the decision rule; the per-grid `evaluation_report` "
                 "on three authored questions is `sample-sanity` — plumbing evidence, not a measurement; whether the model is "
-                "*right* is what Section 6 measures on 150 questions."
+                "*right* is what Section 6 measures on 150 questions.\n\n"
+                "*Core concept.* TAPAS never writes a number: it selects cells and picks an operator, and the pipeline does the "
+                "arithmetic. The cell threshold and the operator argmax are decisions, not calibrated probabilities.\n\n"
+                "**Predict before running:** the population cells carry thousands separators (`1,846,513`). Will the SUM question "
+                "get the right total?"
             ),
             "code": (
                 "ceilings = {{'MAX_ROWS': MAX_ROWS, 'MAX_COLUMNS': MAX_COLUMNS, 'MAX_TOKENS': MAX_TOKENS, 'MAX_QUERY_CHARS': MAX_QUERY_CHARS, 'MAX_CELL_CHARS': MAX_CELL_CHARS, 'AGGREGATIONS': AGGREGATIONS, 'CELL_THRESHOLD': CELL_THRESHOLD, 'MIN_RECORDS': MIN_RECORDS, 'MAX_RECORDS': MAX_RECORDS, 'device': pipe.device}}\n"
@@ -256,6 +317,11 @@ TEMPLATE = {
         },
         {
             "md": (
+                "**What to notice:** each question's operator, its cells, `numeric_answer` and `unparsed_cells`.\n\n<details><summary>Check your reasoning</summary>If the model selects the Manila and Davao cells and picks `SUM`, yes: the pipeline parses thousands commas, so the total is exact. A wrong answer here is a cell or operator choice, not arithmetic — read `aggregation` and `cells` first. Three authored questions are plumbing evidence; Section 6 measures accuracy on 150.</details>"
+            ),
+        },
+        {
+            "md": (
                 "## 6. Baselines and the frozen model on the test questions\n\n"
                 "Three systems frame the adaptation, each read three ways by `denotation_metrics` (carried in `metrics.py`): "
                 "**denotation accuracy** (the WTQ criterion — a number to 1e-6 for an operator, otherwise the same multiset of "
@@ -265,9 +331,14 @@ TEMPLATE = {
                 "picks the column whose header shares the most words with the question, the rows whose other cells appear "
                 "verbatim in it, and an operator from the question's wording (`how many` → `COUNT`, `total` → `SUM`, "
                 "`average` → `AVERAGE`) — a table-QA system that never sees a token embedding. The **frozen model** is scored "
-                "by `pipe.evaluate`, which answers every record through `answer` and scores the results. Expect the frozen "
-                "model far above both baselines on denotation and lookups near the ceiling, and read the operator column: "
-                "the build record measured 0.82 / 0.57 / 0.82 frozen, with `count` at 0.64 and lookups at 0.92."
+                "by `pipe.evaluate`, which answers every record through `answer` and scores the results. **What to look for:** "
+                "the frozen model against both baselines on each of the three measures *separately*, and the operator column "
+                "per question type.\n\n"
+                "*Evaluation practice.* The cell records a **verdict** on the ordering instead of asserting it: on your questions "
+                "the keyword lookup can tie or beat the frozen model (questions that quote cell values verbatim), and that is a "
+                "finding — the notebook continues to fine-tuning.\n\n"
+                "**Predict before running:** the keyword lookup picks an operator from words like *how many* and *total*. Will it "
+                "beat the frozen model on **operator** accuracy?"
             ),
             "code": (
                 "METRICS = ('accuracy', 'aggregation_accuracy', 'cell_accuracy')\n"
@@ -281,7 +352,14 @@ TEMPLATE = {
                 "print({{'definitions': frozen_test['definitions']}})\n"
                 "frozen_fields = {{c: {{'n': v['n'], 'accuracy': round(v['accuracy'], 2), 'aggregation': round(v['aggregation_accuracy'], 2), 'cells': round(v['cell_accuracy'], 2)}} for c, v in frozen_test['per_category'].items()}}\n"
                 "print({{'by_category_frozen': frozen_fields}})\n"
-                "assert frozen_test['accuracy'] > baseline_keyword['accuracy'] > baseline_first['accuracy']"
+                "# A reported verdict, not an assertion: on your questions a baseline may tie or beat the frozen model, and that is a finding.\n"
+                "frozen_verdict = {{metric: ('frozen above both baselines' if frozen_test[metric] > max(baseline_keyword[metric], baseline_first[metric]) else 'a baseline ties or beats the frozen model') for metric in METRICS}}\n"
+                "print({{'frozen_vs_baselines': frozen_verdict}})"
+            ),
+        },
+        {
+            "md": (
+                "**What to notice:** the three measures per system, and `aggregation` per type in `by_category_frozen`.\n\n<details><summary>Check your reasoning</summary>Yes — in the Kaggle T4 release run (20 September 2026) the keyword lookup's operator accuracy was 0.733 against the frozen model's 0.567, while its denotation accuracy was 0.367 against 0.82. The frozen checkpoint finds the right cells (cell accuracy 0.82, lookups 0.92) but picks the operator badly on WikiSQL's `max` and `min` questions (0.12 and 0.16), which become `NONE` lookups of the extreme cell. A word rule gets those right for free; the model has to learn them.</details>"
             ),
         },
         {
@@ -299,11 +377,14 @@ TEMPLATE = {
                 "every epoch is scored on the 90 validation questions and the epoch with the highest validation **score** — "
                 "the mean of denotation, aggregation and cell accuracy, a steadier selector than denotation accuracy alone on "
                 "90 questions — is kept.\n\n"
-                "Watch the training loss fall from about 3 to below 0.5 within four epochs while the validation aggregation "
-                "accuracy jumps in the first epoch: the operator choice is what these questions teach. The build record's "
-                "counter-examples — four blocks at the same rate, or a training draw with as many operator questions as "
-                "lookups — traded lookup accuracy for operator accuracy; the default is the configuration that kept lookups "
-                "whole."
+                "**What to look for:** the training loss and the validation aggregation accuracy per epoch, and which epoch the "
+                "score selects. The build record's counter-examples — four blocks at the same rate, or a training draw with as "
+                "many operator questions as lookups — traded lookup accuracy for operator accuracy.\n\n"
+                "*Core concept.* Every call to `pipe.adapt` starts from the **pinned base**: tensors an earlier call (or an "
+                "artifact) changed are put back first, so epoch 0 is always the frozen model and re-running Sections 7–8 with a "
+                "changed field repeats the comparison validly. To compare a change side by side without replacing the default "
+                "exports, use Section 10.\n\n"
+                "**Predict before running:** which operator types will fine-tuning help, and could it *hurt* one?"
             ),
             "code": (
                 "EPOCHS = 4  # @param {{type:\"integer\"}}\n"
@@ -317,10 +398,18 @@ TEMPLATE = {
                 "    if 'note' in entry:\n"
                 "        row['note'] = entry['note']\n"
                 "    print(row)\n\n\n"
+                "settings = {{'epochs': EPOCHS, 'lr': LEARNING_RATE, 'batch_size': BATCH_SIZE, 'trainable_layers': TRAINABLE_LAYERS}}\n"
+                "if settings != {{'epochs': 4, 'lr': 5e-5, 'batch_size': 8, 'trainable_layers': 2}}:\n"
+                "    print({{'note': 'changed settings: this run starts again from the pinned base and replaces the default results of Sections 8-9; Section 10 compares a change side by side instead', 'settings': settings}})\n"
                 "t0 = time.perf_counter()\n"
                 "adapt_result = pipe.adapt(train_records, val_records, epochs=EPOCHS, lr=LEARNING_RATE, batch_size=BATCH_SIZE, trainable_layers=TRAINABLE_LAYERS, progress=report)\n"
                 "adapt_seconds = round(time.perf_counter() - t0, 1)\n"
-                "print({{'trainable_parameters': adapt_result['n_trainable'], 'total_parameters': adapt_result['n_total'], 'best_epoch': adapt_result['best_epoch'], 'selection': adapt_result['selection'], 'seconds': adapt_seconds}})"
+                "print({{'trainable_parameters': adapt_result['n_trainable'], 'total_parameters': adapt_result['n_total'], 'best_epoch': adapt_result['best_epoch'], 'selection': adapt_result['selection'], 'started_from': adapt_result['started_from'], 'seconds': adapt_seconds}})"
+            ),
+        },
+        {
+            "md": (
+                '**What to notice:** the epoch-0 row (the frozen model on validation), the jump in `val_aggregation_accuracy`, and `best_epoch`.\n\n<details><summary>Check your reasoning</summary>It helps the types whose operator the frozen model gets wrong — `max` and `min`, which WikiSQL turns into lookups of the extreme cell — and it can hurt a type it already handled. Section 8 shows both in the release run. The training loss keeps falling while the validation score picks an earlier or later epoch: the score, not the loss, decides.</details>'
             ),
         },
         {
@@ -329,14 +418,13 @@ TEMPLATE = {
                 "The test questions' tables were never used for training or epoch selection, and no table appears in two "
                 "splits. The adapted model is scored exactly as the frozen model was in Section 6, the four systems are put "
                 "side by side on the three measures, and the per-type breakdown is repeated. Read it in this order: "
-                "**aggregation accuracy** first (what the adaptation teaches — the build record measured 0.57 → 0.81), then "
-                "**cell accuracy** (0.82 → 0.85) and **denotation accuracy** (0.82 → 0.84, three questions of 150), then the "
-                "per-type rows, where `average`, `min` and `sum` each gained one question, `count` and `max` did not move and "
-                "lookups stayed at 0.92. The cell asserts the adapted aggregation accuracy is above the frozen one; denotation "
-                "accuracy is reported, not asserted, because on 150 questions it moves by single questions and the build "
-                "record's other draws moved it either way — the CPU pre-flight of this very notebook kept it at 0.82 (epoch 3 "
-                "selected, aggregation accuracy 0.57 → 0.83) where the GPU run gained three questions (epoch 2, 0.57 → 0.81). "
-                "One seeded split gives **no dispersion estimate**; the deltas are "
+                "**aggregation accuracy** first (what the adaptation teaches), then **cell accuracy** and **denotation "
+                "accuracy**, then the per-type rows — both the answer accuracy and the **operator accuracy per type**, because "
+                "an overall operator gain can hide a type whose operator the model *unlearned*. On 25 questions per type, one "
+                "question is four points; on 150, denotation moves by single questions, in either direction across runs. The "
+                "cell records verdicts — whether aggregation, cell and denotation accuracy rose — instead of asserting them, so "
+                "a set where the frozen model already picks every operator (aggregation 1.0) still completes, exports and "
+                "writes the result. One seeded split gives **no dispersion estimate**; the deltas are "
                 "sample-sanity evidence that the adaptation contract works, not a benchmark, and a gain on six question types "
                 "over Wikipedia tables says nothing about your tables until you measure them."
             ),
@@ -347,6 +435,11 @@ TEMPLATE = {
                 "comparison = {{metric: {{'first_cell': round(baseline_first[metric], 3), 'keyword': round(baseline_keyword[metric], 3), 'frozen': round(frozen_test[metric], 3), 'adapted': round(adapted_test[metric], 3)}} for metric in METRICS}}\n"
                 "comparison['delta_vs_frozen'] = {{metric: round(adapted_test[metric] - frozen_test[metric], 3) for metric in METRICS}}\n"
                 "comparison['by_category'] = {{c: {{'n': frozen_fields[c]['n'], 'frozen': frozen_fields[c]['accuracy'], 'adapted': adapted_fields[c]['accuracy'], 'frozen_aggregation': frozen_fields[c]['aggregation'], 'adapted_aggregation': adapted_fields[c]['aggregation']}} for c in frozen_fields}}\n"
+                "def direction(new, old):\n"
+                "    return 'improved' if new > old else ('no gain' if new == old else 'worse')\n"
+                "# Reported verdicts, not assertions: a measure that does not rise is a result to record, and export and reload still run.\n"
+                "comparison['verdicts'] = {{'frozen_vs_baselines': frozen_verdict, **{{f'adapted_vs_frozen_{{metric}}': direction(adapted_test[metric], frozen_test[metric]) for metric in METRICS}}}}\n"
+                "comparison['operator_regressions'] = sorted(c for c in frozen_fields if adapted_fields[c]['aggregation'] < frozen_fields[c]['aggregation'])\n"
                 "for key, row in comparison.items():\n"
                 "    print({{key: row}})\n"
                 "evaluation_report_payload = {{\n"
@@ -365,8 +458,13 @@ TEMPLATE = {
                 "}}\n"
                 "with open('outputs/{stem}_evaluation_report.json', 'w', encoding='utf-8') as f:\n"
                 "    json.dump(evaluation_report_payload, f, indent=2, ensure_ascii=False)\n"
-                "assert adapted_test['aggregation_accuracy'] > frozen_test['aggregation_accuracy']\n"
+                "print({{'verdicts': comparison['verdicts'], 'operator_regressions': comparison['operator_regressions']}})\n"
                 "print({{'report': 'outputs/{stem}_evaluation_report.json'}})"
+            ),
+        },
+        {
+            "md": (
+                "**What to notice:** the overall `delta_vs_frozen`, then `by_category` — answer and operator accuracy per type — and `operator_regressions`.\n\n<details><summary>Check your reasoning</summary>In the Kaggle T4 release run (20 September 2026) aggregation accuracy rose from 0.567 to 0.807 and cell accuracy from 0.82 to 0.833, but denotation accuracy fell from 0.82 to 0.813 (one question). Per type, the operator gain came from `max` (0.12 → 0.92), `min` (0.16 → 0.96) and lookups (0.76 → 1.0), while `sum` fell from 0.88 to 0.56 — eight questions whose operator the model unlearned — and `count` from 0.72 to 0.64. Answers: `average` +1, `lookup` and `max` −1 each, `count`, `min` and `sum` unchanged. The build record's CPU run had moved denotation the other way (0.82 → 0.84). The lesson: an overall operator gain can hide a regression on one type, and single-question movements are noise.</details>"
             ),
         },
         {
@@ -384,7 +482,9 @@ TEMPLATE = {
                 "snapshot, checks the artifact manifest, its digest and its exact tensor set **before** deserialising, refuses "
                 "any tensor outside the encoder blocks and heads, and overlays the tensors onto a freshly loaded base — a new "
                 "object from files, not the in-memory model (VER2). The cell asserts identical cells, operators and "
-                "aggregation logits on eight test questions (VER4)."
+                "aggregation logits on eight test questions (VER4) — a contract check, so it stays a hard check.\n\n"
+                "**Predict before running:** the adapted model learned on WikiSQL tables. Will it answer the city table's SUM "
+                "question the same way as the frozen model?"
             ),
             "code": (
                 "import shutil\n\n"
@@ -429,14 +529,80 @@ TEMPLATE = {
                 "print(sorted(os.listdir('outputs')))"
             ),
         },
+        {
+            "md": (
+                "**What to notice:** the frozen and adapted rows for each city question in `outputs/{stem}_answers.csv`, and the reload parity line.\n\n<details><summary>Check your reasoning</summary>Not necessarily: the release run's adapted model chose `SUM` less often on WikiSQL (`sum` operator accuracy 0.88 → 0.56), so a changed answer on the SUM question would be consistent with Section 8 — record it as a finding about erosion outside the corpus, from three questions, not a measurement. Reload parity held in the release run: eight of eight identical answers.</details>"
+            ),
+        },
+        {
+            "md": (
+                "## 10. Change one thing: train four encoder blocks (optional)\n\n"
+                "*Evaluation practice.* A **Predict → Change one thing → Run → Observe → Explain** activity, off by default so "
+                "Run all is unaffected. Set `RUN_EXPERIMENT = True`, change **one** field — by default four encoder blocks train "
+                "instead of two — and run this cell after Sections 4–9. The experiment loads its **own** pipeline from the "
+                "verified snapshot, so it starts from the checkpoint and never touches the default `pipe`; it writes only to "
+                "`outputs/{stem}_experiment/`, prints the default and the changed run side by side — overall and operator "
+                "accuracy per type — and checks that the default exports (adapter, evaluation report, result) are byte-identical "
+                "afterwards. About as long as Section 7 again.\n\n"
+                "**Predict:** with twice the trainable blocks, will operator accuracy rise further, and what happens to lookups?"
+            ),
+            "code": (
+                "RUN_EXPERIMENT = False  # @param {{type:\"boolean\"}}\n"
+                "EXPERIMENT_TRAINABLE_LAYERS = 4  # @param {{type:\"integer\"}}\n"
+                "EXPERIMENT_EPOCHS = 4  # @param {{type:\"integer\"}}\n"
+                "EXPERIMENT_LEARNING_RATE = 5e-5  # @param {{type:\"number\"}}\n\n"
+                "if not RUN_EXPERIMENT:\n"
+                "    print({{'experiment': 'skipped (RUN_EXPERIMENT = False); the default path above is complete'}})\n"
+                "else:\n"
+                "    canonical_files = {{'adapter': artifact_dir / 'adapter.safetensors', 'evaluation_report': Path('outputs/{stem}_evaluation_report.json'), 'result': Path('outputs/{stem}_result.json')}}\n"
+                "    canonical = {{name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in canonical_files.items()}}\n"
+                "    experiment_dir = Path('outputs/{stem}_experiment')\n"
+                "    shutil.rmtree(experiment_dir, ignore_errors=True)\n"
+                "    experiment_dir.mkdir(parents=True)\n"
+                "    # Its own pipeline from the verified snapshot: the experiment starts from the checkpoint and the default pipe is untouched.\n"
+                "    experiment_pipe = TAPASTableQAPipeline.from_pretrained(weights_dir=WEIGHTS_DIR, device=pipe.device)\n"
+                "    experiment_result = experiment_pipe.adapt(train_records, val_records, epochs=EXPERIMENT_EPOCHS, lr=EXPERIMENT_LEARNING_RATE, batch_size=BATCH_SIZE, trainable_layers=EXPERIMENT_TRAINABLE_LAYERS, progress=report)\n"
+                "    experiment_test = experiment_pipe.evaluate(test_records)\n"
+                "    side_by_side = {{\n"
+                "        'settings': {{'default': {{'trainable_layers': adapt_result['trainable_layers'], 'epochs': adapt_result['epochs'], 'lr': adapt_result['lr']}}, 'experiment': {{'trainable_layers': EXPERIMENT_TRAINABLE_LAYERS, 'epochs': EXPERIMENT_EPOCHS, 'lr': EXPERIMENT_LEARNING_RATE}}}},\n"
+                "        'best_epoch': {{'default': adapt_result['best_epoch'], 'experiment': experiment_result['best_epoch']}},\n"
+                "        'epoch_0_val_score': {{'default': (adapt_result['history'][0]['val'] or {{}}).get('score'), 'experiment': (experiment_result['history'][0]['val'] or {{}}).get('score')}},\n"
+                "        'test': {{metric: {{'frozen': round(frozen_test[metric], 3), 'default': round(adapted_test[metric], 3), 'experiment': round(experiment_test[metric], 3)}} for metric in METRICS}},\n"
+                "        'operator_by_category': {{c: {{'frozen': frozen_fields[c]['aggregation'], 'default': adapted_fields[c]['aggregation'], 'experiment': round(v['aggregation_accuracy'], 2)}} for c, v in experiment_test['per_category'].items() if c in frozen_fields}},\n"
+                "        'trainable_parameters': {{'default': adapt_result['n_trainable'], 'experiment': experiment_result['n_trainable']}},\n"
+                "    }}\n"
+                "    for key, row in side_by_side.items():\n"
+                "        print({{key: row}})\n"
+                "    with open(experiment_dir / 'experiment_report.json', 'w', encoding='utf-8') as handle:\n"
+                "        json.dump({{'side_by_side': side_by_side, 'history': experiment_result['history']}}, handle, indent=2, ensure_ascii=False, default=str)\n"
+                "    unchanged = {{name: hashlib.sha256(path.read_bytes()).hexdigest() == canonical[name] for name, path in canonical_files.items()}}\n"
+                "    if not all(unchanged.values()):\n"
+                "        raise RuntimeError(f'the experiment changed a default export: {{unchanged}}')\n"
+                "    print({{'default_exports_unchanged': unchanged, 'experiment_outputs': str(experiment_dir)}})\n"
+                "    del experiment_pipe"
+            ),
+        },
+        {
+            "md": (
+                "**Observe → Explain.** Compare `epoch_0_val_score` (it must be equal: both runs start from the checkpoint), the "
+                "`test` rows and `operator_by_category`.\n\n"
+                "<details><summary>Check your reasoning</summary>The build record's four-block run at the same rate raised "
+                "operator accuracy about as much as two blocks while costing lookups — more capacity let the model trade cell "
+                "selection for operator choice. No experiment run is recorded on the release runtime; on 25 questions per type, "
+                "read a difference of one or two questions as noise, and look for the trade between operator and lookup rows "
+                "rather than the overall number.</details>"
+            ),
+        },
     ],
     "closing": (
         "## Interpretation and limits\n\n"
         "The frozen WTQ checkpoint is already a strong lookup model on WikiSQL tables — far above the two non-neural "
-        "baselines, at 0.92 on lookups in the build record — and a bounded fine-tuning of the last two encoder blocks and the "
-        "heads on 240 questions moves what these questions teach: the operator choice (aggregation accuracy 0.57 → 0.81), a "
-        "little of the cell selection (0.82 → 0.85) and three questions of denotation accuracy (0.82 → 0.84), with the lookups "
-        "untouched and a 100 MB adapter that reloads to identical answers. That is the claim: the adaptation contract works "
+        "baselines on denotation, at 0.92 on lookups — and a bounded fine-tuning of the last two encoder blocks and the heads "
+        "on 240 questions moves what these questions teach: the operator choice. In the Kaggle T4 release run (20 September "
+        "2026) aggregation accuracy rose from 0.567 to 0.807, cell accuracy from 0.82 to 0.833, and denotation accuracy moved "
+        "by one question (0.82 → 0.813; the CPU build record gained three, 0.82 → 0.84). The operator gain is not uniform: "
+        "`max`, `min` and lookups gained, while `sum` fell from 0.88 to 0.56 and `count` from 0.72 to 0.64 — the adaptation "
+        "unlearned SUM selection on this split. The 100 MB adapter reloads to identical answers. That is the claim: the adaptation contract works "
         "end to end on a real labelled table-question set, and the numbers it produces are read on three measures, per "
         "question type, against two non-neural baselines and the frozen model rather than in isolation.\n\n"
         "The test split is 150 questions from one seeded draw of one sample, the validation split that picks the epoch is 90, "
@@ -460,10 +626,36 @@ TEMPLATE = {
         "evaluate against two trivial baselines and the frozen model on a table-disjoint split, and emit the shown "
         "machine-readable artifacts — without the repository being reachable. It does **not** establish benchmark superiority, "
         "denotation accuracy on any other domain or table shape, a usable threshold, or production fitness.\n\n"
-        "**Optional experiments (they do not affect the default path):** set `TRAINABLE_LAYERS = 4` and compare the artifact "
-        "size, the operator accuracy and the lookup accuracy; raise `EPOCHS` and watch the validation score pick the epoch "
-        "while the training loss keeps falling; change `LEARNING_RATE` to `2e-5` and read a smaller, steadier gain; or bring "
-        "your own JSONL through BYOD and read the two baselines before the adapted number.\n\n"
+        "**Optional experiments (off by default; each names its field and what to run):** Section 10 trains four encoder "
+        "blocks in its own pipeline and prints it beside the default run — change `EXPERIMENT_TRAINABLE_LAYERS`, "
+        "`EXPERIMENT_EPOCHS` or `EXPERIMENT_LEARNING_RATE` (for example `2e-5`) there and run that cell again. Changing "
+        "`EPOCHS`, `LEARNING_RATE` or `TRAINABLE_LAYERS` and choosing **Run after** from Section 7 also starts from the pinned "
+        "base — every `adapt` puts it back first — but replaces the default results and exports. BYOD: `USE_BYOD` and "
+        "`BYOD_PATH` in Section 4, then **Run after** from Section 4, and read the two baselines before the adapted number.\n\n"
+        "## Troubleshooting\n\n"
+'- **Section 1 stops with "This notebook needs a Linux x86_64 runtime"** — you are on Windows, macOS or an ARM machine. Use Google Colab, Kaggle or a Linux x86_64 Jupyter server.\n- **The uv wheel fails its size/SHA-256 check, or a download in Section 1 times out** — run Section 1 again; a complete environment is reused, an incomplete one is finished. If it repeats, the network is blocking or altering `files.pythonhosted.org` or `pypi.org`.\n- **"The isolated environment\'s Python process exited"** — usually out of memory. Restart the session and choose **Run all**; leave the optional experiment off on a small runtime.\n- **You re-ran Section 1 on its own** — nothing is lost: it keeps the running worker and every variable, so the cells after it keep working. After a session restart, run from the top.\n- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete it from the snapshot folder Section 3 prints and run Section 3 again; the snapshot comes from `huggingface.co`.\n- **Section 4 cannot fetch the WikiSQL shard, or it fails its digest** — the default path needs `huggingface.co`; run Section 4 again, and delete `weights/wikisql/` if a cached copy is corrupt.\n- **Section 7 is very slow** — TAPAS-large on a 2-vCPU CPU runtime takes a long time; choose a GPU runtime and **Run all** again.\n- **CUDA out of memory** — lower `BATCH_SIZE` in Section 7 and run Sections 7–9 again, or restart the session and choose **Run all**; leave Section 10 off on a small GPU.\n- **BYOD: "BYOD_PATH … does not exist"** — the path is relative to the working directory printed in the message.\n- **BYOD: "the upload dialog exists only in Google Colab"** — on Kaggle or Jupyter, put the zip in the runtime (or attach it as a dataset) and set `BYOD_PATH`.\n- **BYOD: "Upload exactly one .zip file"** — the dialog was cancelled or several files were chosen; run the cell again.\n- **BYOD: "… line N: not valid JSON …"** — that line of your file is broken; each line must be one record object.\n- **BYOD: "… distinct tables are too few" or "the split leaves … training questions"** — add tables or questions; the message names the minimum.\n- **BYOD: a record is refused by `validate_dataset`** — the message names the record and the rule (an operator denotation must be the number its cells give).\n'
+        "## Glossary\n\n"
+        "- **Cell selection** — the cells whose mean token probability exceeds `CELL_THRESHOLD` (0.5).\n"
+        "- **Aggregation operator** — `NONE`, `SUM`, `AVERAGE` or `COUNT`, an argmax over the aggregation head.\n"
+        "- **Numeric answer** — the pipeline's arithmetic over the selected cell strings, never a model output.\n"
+        "- **Denotation / denotation accuracy** — the answer itself (a number to 1e-6, or the multiset of cell strings); the "
+        "fraction of questions answered right.\n"
+        "- **Aggregation accuracy / cell accuracy** — the operator, or the selected coordinates, equal the record's.\n"
+        "- **Weak supervision** — an operator question is trained only against its number (`float_answer`); a lookup labels "
+        "its gold cells.\n"
+        "- **WikiSQL programme execution** — running each question's SQL in pure Python to get its gold cells and value.\n"
+        "- **First-cell floor / keyword lookup** — two non-neural baselines that frame the model's numbers.\n"
+        "- **Table-disjoint split** — every question of a table on one side of the split.\n"
+        "- **Adapter / reload parity** — the trained tensors only (safetensors) overlaid on the pinned base; the reloaded "
+        "pipeline gives identical answers.\n"
+        "- **BYOD** — bring your own data: your labelled table questions through the same cells.\n\n"
+        "## Conclusion (your notes)\n\n"
+        "Optional — fill in from **your** run, not the recorded one:\n\n"
+        "- The task was ___ on ___ test questions over ___ tables.\n"
+        "- The keyword lookup scored denotation ___ / operator ___; the frozen model ___ / ___.\n"
+        "- After fine-tuning (epoch ___ selected): denotation ___, operator ___, cells ___.\n"
+        "- Types that gained: ___; types that lost (answer or operator): ___.\n"
+        "- What I would need before claiming fine-tuning helps: ___ (for example more test questions, several seeds).\n\n"
         "## References\n\n"
         "- Repository README: https://github.com/kurtvalcorza/tapas-table-question-answering-pipeline/blob/main/README.md\n"
         "- Repository model card: https://github.com/kurtvalcorza/tapas-table-question-answering-pipeline/blob/main/MODEL_CARD.md\n"
@@ -474,6 +666,6 @@ TEMPLATE = {
         "- Understanding tables with intermediate pre-training (Eisenschlos et al., 2020): https://arxiv.org/abs/2010.00571\n"
         "- Seq2SQL: Generating Structured Queries from Natural Language using Reinforcement Learning (WikiSQL; Zhong, Xiong & Socher, 2017): https://arxiv.org/abs/1709.00103 — dataset https://github.com/salesforce/WikiSQL (BSD-3-Clause)\n"
         "- Compositional Semantic Parsing on Semi-Structured Tables (WikiTableQuestions): https://arxiv.org/abs/1508.00305\n"
-        "- DIMER Notebook Specification 2.0 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)"
+        "- DIMER Notebook Specification 2.2 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)"
     ),
 }
