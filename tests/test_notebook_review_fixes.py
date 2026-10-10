@@ -72,6 +72,7 @@ def test_tpq_m1_carried_lock_is_the_committed_lock_and_pins_every_runtime_pin(no
     build.check_lock(build._pins(ROOT), lock_text)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="the worker protocol uses Linux pass_fds (as in rtdetr-detection-pipeline 0feefe5)")
 def test_tpq_m1_section_1_is_idempotent_and_keeps_the_live_worker(notebook, tmp_path, monkeypatch, capsys):
     """The real Section 1 cell, run twice with a stand-in interpreter: the matching environment is reused (no
     download) and the live worker — with every variable later cells created — is kept."""
@@ -138,6 +139,9 @@ class _Tensor:
     def clone(self):
         return _Tensor(self.value.copy())
 
+    def __eq__(self, other):
+        return self.value == other.value
+
 
 class _Model:
     def __init__(self):
@@ -168,6 +172,9 @@ def test_tpq_m2_restore_base_undoes_every_earlier_change_stand_in():
     pipe._remember_base(["encoder.layer.23.w"])  # a second run keeps the first (base) value
     pipe.adapter = {"best_epoch": 2}
     assert pipe.restore_base() == ["aggregation_classifier.w", "encoder.layer.23.w"]
+    assert pipe.restore_base() == []  # nothing differs from the base any more: the count stays honest
+    model.state["encoder.layer.23.w"] = _Tensor([7.0, 7.0])
+    assert pipe.restore_base() == ["encoder.layer.23.w"]  # only the changed tensor is reported
     assert model.state["encoder.layer.23.w"].value.tolist() == [1.0, 2.0] and model.state["aggregation_classifier.w"].value.tolist() == [3.0]
     assert model.state["embeddings.w"].value.tolist() == [4.0] and pipe.adapter is None
 
@@ -351,3 +358,7 @@ def test_tpq_m1_upload_outside_colab_cancelled_and_bad_path_are_explained(notebo
             monkeypatch.setitem(sys.modules, name, module)
         with pytest.raises(ValueError, match=message):
             exec(_section_4(notebook, ""), _section_4_namespace([]))
+
+
+def test_tpq_s4_notebook_declares_spec_2_2(notebook):
+    assert notebook["metadata"]["dimer"]["notebook_spec"] == "2.2"

@@ -1,4 +1,4 @@
-"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.0 §4 standalone carrier).
+"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.2 §4 standalone carrier).
 
 Only the task-specific prose and stage cells live here. Runtime install, the embedded package (three
 modules, carried verbatim in dependency order), and the model pin/stage/verify cells are produced by the
@@ -77,7 +77,7 @@ TEMPLATE = {
         "scores the held-out questions again per type, re-answers the city table with the adapted model, exports the adapter "
         "as safetensors with a manifest, and reloads that artifact into a fresh pipeline to verify answer parity. The default "
         "path needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
-        "(NOTEBOOK_SPEC 2.0 §5). TAPAS-large is a 24-layer encoder over up to 512 tokens: on the build workstation's CPU the "
+        "(NOTEBOOK_SPEC 2.2 §5). TAPAS-large is a 24-layer encoder over up to 512 tokens: on the build workstation's CPU the "
         "whole path took about 31 minutes after the downloads (expect a multiple of that on a 2-vCPU hosted runtime); "
         "a CUDA runtime is used automatically when present and finishes in a few minutes."
     ),
@@ -666,6 +666,6 @@ TEMPLATE = {
         "- Understanding tables with intermediate pre-training (Eisenschlos et al., 2020): https://arxiv.org/abs/2010.00571\n"
         "- Seq2SQL: Generating Structured Queries from Natural Language using Reinforcement Learning (WikiSQL; Zhong, Xiong & Socher, 2017): https://arxiv.org/abs/1709.00103 — dataset https://github.com/salesforce/WikiSQL (BSD-3-Clause)\n"
         "- Compositional Semantic Parsing on Semi-Structured Tables (WikiTableQuestions): https://arxiv.org/abs/1508.00305\n"
-        "- DIMER Notebook Specification 2.0 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)"
+        "- DIMER Notebook Specification 2.2 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)"
     ),
 }
