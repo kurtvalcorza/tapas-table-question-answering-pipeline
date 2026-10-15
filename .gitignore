@@ -16,3 +16,4 @@ weights/**/*.pth
 weights/**/*.onnx
 weights/**/.cache/
 weights/wikisql/
+weights/table-qa-corpora/

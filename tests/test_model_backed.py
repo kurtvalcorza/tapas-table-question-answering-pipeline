@@ -56,7 +56,7 @@ def pipe():
 
 def test_evaluate_scores_the_frozen_model_with_the_breakdown(pipe, records):
     metrics = pipe.evaluate(records[:8])
-    assert metrics["n"] == 8 and 0.0 <= metrics["accuracy"] <= 1.0 and metrics["adapted"] is False
+    assert metrics["n"] == 8 and 0.0 <= metrics["value_accuracy"] <= 1.0 and metrics["adapted"] is False
     assert set(metrics["per_category"]) == {"average", "count", "lookup", "sum"}
     assert metrics["verdict"] == "measured-small-sample" and metrics["truncated"] == 0
     assert pipe.weight_sha256 is not None and len(pipe.weight_sha256) == 64
@@ -149,7 +149,7 @@ def test_evaluate_adapt_and_reload_run_on_a_cuda_device(records, tmp_path):
     cuda = TAPASTableQAPipeline.from_pretrained(device="cuda:0", weights_dir=DEFAULT_WEIGHTS_DIR)
     assert cuda.device == "cuda:0"
     metrics = cuda.evaluate(records[:8])
-    assert 0.0 <= metrics["accuracy"] <= 1.0
+    assert 0.0 <= metrics["value_accuracy"] <= 1.0
     result = cuda.adapt(records[:12], records[12:], epochs=1, trainable_layers=1, batch_size=4)
     assert result["best_epoch"] in (0, 1) and result["history"][1]["train_loss"] > 0.0
     artifact = cuda.save_artifact(tmp_path / "cuda")

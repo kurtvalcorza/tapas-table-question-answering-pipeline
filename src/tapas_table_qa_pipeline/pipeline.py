@@ -617,7 +617,8 @@ class TAPASTableQAPipeline:
 
     def evaluate(self, records: Sequence[Mapping[str, Any]], *, progress: Callable[[int, int], None] | None = None) -> dict[str, Any]:
         """Answer every validated record through `answer` and score the results with `metrics.denotation_metrics`
-        (denotation, aggregation and cell accuracy, per category and per gold operator)."""
+        (value-equality and strict-operator accuracy, co-primary, plus aggregation and cell accuracy, per category
+        and per gold operator)."""
         from .metrics import denotation_metrics
         from .samples import validate_dataset
 
@@ -659,8 +660,8 @@ class TAPASTableQAPipeline:
         denotation of an operator question is the `float_answer` the aggregation is trained against. Only the
         last `trainable_layers` encoder blocks and the three heads receive gradients; AdamW (weight decay 0.01),
         gradient clipping at 1.0, seeded shuffling, no scheduler. Epoch 0 records the frozen model's validation
-        metrics; the epoch with the highest validation score — the mean of denotation, aggregation and cell
-        accuracy, a steadier selector than denotation accuracy alone on a small split — is kept (the final one
+        metrics; the epoch with the highest validation score — the mean of value-equality, aggregation and cell
+        accuracy, a steadier selector than one answer rule alone on a small split — is kept (the final one
         without a validation split). Every call starts from the pinned base: tensors an earlier adapt() or
         load_artifact() changed are restored first, so epoch 0 is always the frozen model. On any exception the
         weights and the adapter record this call found are put back."""
@@ -698,8 +699,8 @@ class TAPASTableQAPipeline:
             if val_checked is None:
                 return None
             result = self.evaluate(val_checked)
-            out = {k: result[k] for k in ("accuracy", "aggregation_accuracy", "cell_accuracy", "n")}
-            out["score"] = (out["accuracy"] + out["aggregation_accuracy"] + out["cell_accuracy"]) / 3
+            out = {k: result[k] for k in ("value_accuracy", "strict_accuracy", "aggregation_accuracy", "cell_accuracy", "n")}
+            out["score"] = (out["value_accuracy"] + out["aggregation_accuracy"] + out["cell_accuracy"]) / 3
             return out
 
         try:
@@ -759,7 +760,7 @@ class TAPASTableQAPipeline:
             "n_total": sum(p.numel() for p in model.parameters()),
             "epochs": epochs,
             "best_epoch": best_epoch,
-            "selection": "highest validation score (mean of denotation, aggregation and cell accuracy)" if val_checked is not None else "final epoch (no validation split)",
+            "selection": "highest validation score (mean of value-equality, aggregation and cell accuracy)" if val_checked is not None else "final epoch (no validation split)",
             "lr": float(lr),
             "batch_size": batch_size,
             "seed": seed,

@@ -1,9 +1,17 @@
 """Corpus-level table-QA measures and two non-neural baselines, in plain Python.
 
-``denotation_metrics`` scores pipeline results against records of the dataset contract (``samples.py``):
-denotation accuracy (WTQ-style match of the pipeline's answer against the record's denotation), aggregation
-accuracy (the predicted operator equals the record's), cell accuracy (the selected coordinates equal the
-record's as a set), each overall, per ``category`` and per gold aggregation. The baselines answer through the
+``denotation_metrics`` scores pipeline results against records of the dataset contract (``samples.py``) with two
+co-primary answer rules, both computed on the pipeline's *final answer* (the selected cells under ``NONE``,
+otherwise the number the predicted operator produces):
+
+- **value-equality** (``value_accuracy``): the final answer's value equals the gold value, whatever operator
+  produced it. A ``NONE`` answer whose single cell parses to a numeric gold counts, and so does an operator
+  answer whose number equals a single numeric gold cell.
+- **strict-operator** (``strict_accuracy``): the predicted operator equals the gold operator *and* the value is
+  right (for ``NONE``: the same multiset of cells).
+
+Aggregation accuracy (operator equals the record's) and cell accuracy (coordinates equal as a set) are kept as
+diagnostics. Each measure is reported overall, per ``category`` and per gold aggregation. The baselines answer through the
 same result shape so they are scored by the same function.
 """
 
@@ -15,12 +23,18 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .pipeline import AGGREGATIONS, DECISION_RULE, compute_numeric_answer, denotation_match
+from .pipeline import AGGREGATIONS, DECISION_RULE, compute_numeric_answer, parse_number
 
 METRIC_DEFINITIONS = {
-    "accuracy": (
-        "fraction of questions whose pipeline answer matches the record's denotation (numeric to 1e-6 for "
-        "an operator, otherwise the same multiset of cell strings after lower-casing); in 0..1"
+    "value_accuracy": (
+        "value-equality: fraction of questions whose final answer has the gold value regardless of the operator "
+        "that produced it (numbers to 1e-6 relative; a NONE answer of one numeric cell and an operator answer "
+        "against one numeric gold cell are compared as numbers; otherwise the same multiset of cell strings "
+        "after lower-casing); in 0..1"
+    ),
+    "strict_accuracy": (
+        "strict-operator: fraction of questions whose predicted operator equals the gold operator and whose "
+        "value is right under value-equality; in 0..1"
     ),
     "aggregation_accuracy": "fraction of questions whose predicted operator equals the record's; in 0..1",
     "cell_accuracy": "fraction of questions whose selected coordinates equal the record's as a set; in 0..1",
@@ -32,14 +46,52 @@ def _words(text: str) -> set[str]:
     return set(_WORD.findall(str(text).lower()))
 
 
-def _result_matches(result: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[bool, bool, bool]:
+def _close(a: float, b: float) -> bool:
+    return abs(float(a) - float(b)) <= 1e-6 * max(1.0, abs(float(b)))
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text).lower().split())
+
+
+def final_value(result: Mapping[str, Any]) -> float | list[str] | None:
+    """The pipeline's final answer: the selected cells under NONE, else the operator's computed number."""
+    if result.get("aggregation", "NONE") == "NONE":
+        return [str(c) for c in result.get("cells", [])]
+    value = result.get("numeric_answer")
+    return None if value is None else float(value)
+
+
+def value_correct(result: Mapping[str, Any], gold: Any) -> bool:
+    """Value-equality on the final answer, regardless of the operator that produced it (METRIC_DEFINITIONS)."""
+    predicted = final_value(result)
+    if predicted is None:
+        return False
+    numeric_gold = isinstance(gold, int | float) and not isinstance(gold, bool)
+    gold_cells = None if numeric_gold else [str(g) for g in gold]
+    if gold_cells is None:
+        gold_number: float | None = float(gold)
+    else:
+        gold_number = parse_number(gold_cells[0]) if len(gold_cells) == 1 else None
+    if isinstance(predicted, float):
+        predicted_number: float | None = predicted
+    else:
+        predicted_number = parse_number(predicted[0]) if len(predicted) == 1 else None
+    if gold_number is not None and predicted_number is not None:
+        return _close(predicted_number, gold_number)
+    if isinstance(predicted, list) and gold_cells is not None:
+        return sorted(_norm(c) for c in predicted) == sorted(_norm(g) for g in gold_cells)
+    return False
+
+
+def _result_matches(result: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[bool, bool, bool, bool]:
     answer = record["answer"]
     gold = answer["denotation"]
-    denotation = denotation_match(result, gold if not isinstance(gold, list) else list(gold))
+    value = value_correct(result, gold if not isinstance(gold, list) else list(gold))
     aggregation = result.get("aggregation") == answer["aggregation"]
     predicted = sorted(tuple(int(v) for v in c) for c in result.get("coordinates", []))
     cells = predicted == sorted(tuple(int(v) for v in c) for c in answer["coordinates"])
-    return bool(denotation), bool(aggregation), bool(cells)
+    return bool(value), bool(value and aggregation), bool(aggregation), bool(cells)
 
 
 def denotation_metrics(
@@ -50,14 +102,15 @@ def denotation_metrics(
         raise ValueError("results and records must be non-empty and the same length")
     rows = []
     for result, record in zip(results, records, strict=True):
-        d, a, c = _result_matches(result, record)
+        v, s, a, c = _result_matches(result, record)
         rows.append(
             {
                 "id": record["id"],
                 "category": record.get("category"),
                 "gold_aggregation": record["answer"]["aggregation"],
                 "aggregation": result.get("aggregation"),
-                "match": d,
+                "value_match": v,
+                "strict_match": s,
                 "aggregation_match": a,
                 "cell_match": c,
             }
@@ -67,7 +120,8 @@ def denotation_metrics(
         n = len(items)
         return {
             "n": n,
-            "accuracy": sum(r["match"] for r in items) / n,
+            "value_accuracy": sum(r["value_match"] for r in items) / n,
+            "strict_accuracy": sum(r["strict_match"] for r in items) / n,
             "aggregation_accuracy": sum(r["aggregation_match"] for r in items) / n,
             "cell_accuracy": sum(r["cell_match"] for r in items) / n,
         }
