@@ -562,6 +562,25 @@ class TAPASTableQAPipeline:
         return self._model, self._tokenizer, self._frame_cls
 
 
+    def token_report(self, records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        """Tokenise every record's question and table with the pinned tokenizer exactly as `answer` does and report
+        which would be truncated at MAX_TOKENS (rows dropped or cell text trimmed). Character ceilings are only a
+        preliminary filter; this is the check."""
+        _model, tokenizer, frame_cls = self._require_model()
+        truncated, longest = [], 0
+        for record in records:
+            columns = list(record["table"])
+            rows = [[record["table"][h][i] for h in columns] for i in range(len(record["table"][columns[0]]))]
+            frame = frame_cls(rows, columns=columns, dtype=object)
+            encoded = tokenizer(table=frame, queries=[record["question"]], truncation="drop_rows_to_fit", max_length=MAX_TOKENS, padding=False)
+            n_tokens = len(encoded["input_ids"][0]) if isinstance(encoded["input_ids"][0], list) else len(encoded["input_ids"])
+            rows_kept = max(t[2] for t in encoded["token_type_ids"][0]) if isinstance(encoded["input_ids"][0], list) else max(t[2] for t in encoded["token_type_ids"])
+            full = 2 + sum(len(tokenizer.tokenize(text)) for text in [record["question"], *columns, *(c for row in rows for c in row)])
+            longest = max(longest, n_tokens)
+            if rows_kept < len(rows) or n_tokens < full:
+                truncated.append(str(record["id"]))
+        return {"n": len(records), "max_tokens": longest, "max_allowed": MAX_TOKENS, "truncated": truncated}
+
     def _encode_for_training(self, record: Mapping[str, Any]) -> tuple[dict[str, Any], float]:
         """Tokenise one record with its gold coordinates (labels, numeric values, scales) and the float answer the
         weak-supervision loss trains the operator on (NaN for a NONE answer). Raises when the table would be

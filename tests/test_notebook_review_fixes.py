@@ -249,7 +249,7 @@ def test_tpq_m4_prose_names_its_runs_and_discusses_the_sum_regression(notebook):
     for stale in ("with the lookups untouched", "lookups stayed at 0.92", "Kaggle T4 release run", "0.82 → 0.84", "more capacity let the model"):
         assert stale not in markdown, stale
     assert "0.88 to 0.56" in markdown and "`f8e0d361`" in markdown and "not re-run here" in markdown
-    assert "unlearned" in markdown and "COUNT is not exercised in this revision" in markdown
+    assert "unlearned" in markdown and "COUNT and AVERAGE are not exercised in this revision" in markdown
 
 
 # --- TPQ-M5: guided layer and infrastructure labelling ----------------------------------------------------------
@@ -326,7 +326,8 @@ def _section_4_namespace(restored: list) -> dict:
     ns = {}
     for module in (pl, mt, sm):
         ns.update({k: getattr(module, k) for k in dir(module) if not k.startswith("__")})
-    pipe = types.SimpleNamespace(adapter={"best_epoch": 2}, restore_base=lambda: restored.append(True) or ["a"])
+    pipe = types.SimpleNamespace(adapter={"best_epoch": 2}, restore_base=lambda: restored.append(True) or ["a"],
+                                 token_report=lambda records: {"n": len(records), "max_tokens": 100, "max_allowed": 512, "truncated": []})
     ns.update({"os": __import__("os"), "Path": Path, "pipe": pipe, "__name__": "__main__"})
     return ns
 

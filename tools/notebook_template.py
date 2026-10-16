@@ -6,7 +6,7 @@ generator from repository sources so they cannot drift from the package.
 
 This template configures an E2E table-question-answering fine-tuning workflow: the pinned
 google/tapas-large-finetuned-wtq snapshot is digest-verified and loaded, digest-pinned TAT-QA and FinQA files are
-fetched and converted to gold cells and values (lookups from TAT-QA, sums and averages from FinQA), a group-disjoint
+fetched and converted to gold cells and values (lookups from TAT-QA, sums from FinQA), a group-disjoint
 sample is drawn and validated, the synthetic city table is answered through the inference contract, the frozen
 model's value-equality / strict-operator / operator / cell accuracy is measured per question type beside two
 non-neural baselines, a bounded fine-tuning of the last encoder
@@ -23,6 +23,11 @@ TEMPLATE = {
     "profile": "E2E",
     "mode": "GUIDED",
     "notebook_kind": "TUTORIAL",
+    "external_access": (
+        "the Hugging Face Hub (`huggingface.co`, and its LFS CDN) for the pinned `{MODEL_ID}` snapshot (~{total_mb:.0f} MB) at "
+        "revision `{MODEL_REVISION}` and for the TAT-QA file, and GitHub's raw file host (`raw.githubusercontent.com`) for the "
+        "three FinQA files at a pinned commit. No credentials are required; nothing is installed from this repository."
+    ),
     # NOTEBOOK_SPEC 2.5 §3.6.5 canonical use notice (DOC17-DOC21); this notebook has a BYOD path, so the data clause stays.
     "use_notice": (
         "> **⚠️ Notice.** For research, training and evaluation only. Not validated for production,\n"
@@ -81,12 +86,12 @@ TEMPLATE = {
         "Selecting **Run all** in a fresh supported runtime builds an isolated environment from the hash-locked pins (nothing is "
         "installed into the notebook's own Python, so no restart is needed and Run all completes in one pass), stages and digest-verifies the "
         "pinned `google/tapas-large-finetuned-wtq` snapshot (a 1.35 GB `model.safetensors`; no pickle is opened anywhere), fetches "
-        "four pinned table-QA files that are not in the checkpoint's fine-tuning chain — TAT-QA from the Hugging Face Hub and FinQA "
+        "four pinned table-QA files whose datasets are not named in the checkpoint's documented fine-tuning chain — TAT-QA from the Hugging Face Hub and FinQA "
         "from GitHub, each at an immutable commit (about 116 MB together, each refused on any byte-size or SHA-256 mismatch) — converts "
-        "their answers to gold cells and values, draws a sample of 200 / 60 / 105 questions in which no source report or table spans "
-        "two splits (lookups, sums and averages; **COUNT is not exercised in this revision**), answers the synthetic city table through "
+        "their answers to single-column gold cells, draws a sample of 130 / 36 / 60 questions (lookups and sums; **COUNT and AVERAGE are not exercised in this revision**) "
+        "that is FinQA-report-disjoint and TAT-QA-table-disjoint, checks that no question would be truncated at 512 tokens, answers the synthetic city table through "
         "the inference contract with an input manifest and a rejection probe, measures the frozen model's value-equality and "
-        "strict-operator accuracy (co-primary) plus operator and cell accuracy per question type over the 105 test questions beside "
+        "strict-operator accuracy (co-primary) plus operator and cell accuracy per question type over the 60 test questions beside "
         "the first-cell and keyword-lookup baselines, runs a bounded fine-tuning of the last "
         "two encoder blocks and the three heads with the model's own weak-supervision loss and validation-score epoch selection, "
         "scores the held-out questions again per type, re-answers the city table with the adapted model, exports the adapter "
@@ -115,28 +120,30 @@ TEMPLATE = {
         "`argmax` over `NONE`, `SUM`, `AVERAGE`, `COUNT`, and **the numeric answer is the pipeline's arithmetic over the selected "
         "cell strings**, never a model output. Neither decision is a calibrated probability, the model never abstains, and it "
         "applies no acceptance threshold — **every question yields some cells and some operator**.\n\n"
-        "What this notebook adds to inference is **adaptation with labelled questions** on tables the checkpoint was not "
-        "fine-tuned on: lookups from **TAT-QA** and sums and averages from **FinQA**, both over company financial reports "
-        "(Data context below). The question is narrow: does a bounded fine-tuning of the last two encoder blocks and the three "
-        "heads on 200 questions — 80 lookups, 60 sums and 60 averages, trained with the model's own **weak-supervision loss** (the "
-        "gold cells label a lookup, an operator question carries only its number) — move **value-equality accuracy** and "
-        "**strict-operator accuracy** (the two co-primary answer rules), and the **aggregation accuracy** and **cell accuracy** "
-        "diagnostics, on a split in which no source report or table is shared, per question type, against two **non-neural "
-        "baselines** (the **first-cell floor** and a **keyword lookup**)? **COUNT is not exercised in this revision:** neither "
-        "source has questions that convert cleanly to `COUNT`, so no result here says anything about that operator. Nothing "
-        "here is a quality claim about your tables: it is one seeded split of one sample.\n\n"
+        "What this notebook adds to inference is **adaptation with labelled questions** on tables from datasets that are "
+        "not named in the checkpoint's documented fine-tuning chain: lookups from **TAT-QA** and sums from **FinQA**, both "
+        "over company financial reports (Data context below). The question is narrow: does a bounded fine-tuning of the last "
+        "two encoder blocks and the three heads on 130 questions — 80 lookups and 50 sums, trained with the model's own "
+        "**weak-supervision loss** (the gold cells label a lookup, a sum carries only its number) — change **value-equality "
+        "accuracy** and **strict-operator accuracy** (the two co-primary answer rules), and the **aggregation accuracy** and "
+        "**cell accuracy** diagnostics, on a held-out split, per question type, against two **non-neural baselines** (the "
+        "**first-cell floor** and a **keyword lookup**)? A run in which nothing improves is a valid answer to that question. "
+        "**COUNT and AVERAGE are not exercised in this revision:** no question in the default sample needs either, so no result here says anything "
+        "about those operators. Question type and source are confounded — every lookup comes from TAT-QA and every sum from "
+        "FinQA — so a per-type difference also reflects the difference between the two datasets. Nothing here is a quality "
+        "claim about your tables: it is one seeded split of one sample.\n\n"
         "**Snapshot note:** the pinned revision ships `model.safetensors` (a 6-file manifest) — no pickle is opened anywhere "
         "in this notebook. Section 3 stages and digest-verifies those files before the tokenizer or the model is constructed."
     ),
     "guided": {
         "opening": [
             (
-                "**Who this notebook is for.** A learner who knows basic Python, has used Colab or Jupyter, and wants to see how a pretrained table-QA model is fine-tuned with a small labelled set — what it learns, what it can unlearn, and how to tell from held-out numbers per question type. No prior experience with TAPAS or fine-tuning is assumed; each term is explained where it first matters and again in the **Glossary** at the end. A GPU runtime is strongly recommended; on CPU the run takes over half an hour.\n\n**Input → Model → Output.**\n\n| | Answering | Fine-tuning |\n|---|---|---|\n| Input | one table of string cells (≤ 64 rows, ≤ 32 columns) and one question | labelled questions: 200 training and 60 validation questions (TAT-QA lookups, FinQA sums and averages), split so no report or table is shared |\n| Model | TAPAS-large (WTQ): a 24-layer encoder over the flattened table with a cell-selection head and an aggregation head | the last two encoder blocks and the three heads trained with the model's own weak-supervision loss |\n| Output | selected cells, one operator (`NONE`, `SUM`, `AVERAGE`, `COUNT`) and the pipeline's arithmetic over the cells — never an abstention | a safetensors adapter, and value-equality, strict-operator, operator and cell accuracy per question type beside two baselines |\n\n**How to use this notebook.** Choose a runtime (a GPU is strongly recommended), then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed. Sections 1–3 are **infrastructure** — the isolated environment, the carried package and the model snapshot — and their cells are collapsed; you may run them without studying them. The learning path starts in Section 4. Form fields (`# @param`) are the only values meant to be edited, and the defaults reproduce the recorded run. Before each principal result the notebook asks you to **Predict**; after it come **What to notice** and a collapsible **Check your reasoning** with a worked answer. No hosted run of this revision is recorded yet, so the worked answers say what to look for and quote no number from this revision; a number from an earlier revision is labelled with that revision and was not re-run here. Section 10 is a **change-one-thing experiment**, off by default. **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end. Writing your predictions down is optional.\n\n**Roadmap:** 1–3 infrastructure → 4 the financial-table sample and a report-level split *(evaluation practice)* → 5 the inference contract on a synthetic table *(core concept: cells, operator, arithmetic)* → 6 two baselines and the frozen model per question type *(evaluation practice)* → 7 bounded fine-tuning *(core concept: weak supervision)* → 8 held-out evaluation per type → 9 re-answer, export and reload *(engineering)* → 10 change one thing (optional) → conclude."
+                "**Who this notebook is for.** A learner who knows basic Python, has used Colab or Jupyter, and wants to see how a pretrained table-QA model is fine-tuned with a small labelled set — what it learns, what it can unlearn, and how to tell from held-out numbers per question type. No prior experience with TAPAS or fine-tuning is assumed; each term is explained where it first matters and again in the **Glossary** at the end. A GPU runtime is strongly recommended; on CPU the run takes over half an hour.\n\n**Input → Model → Output.**\n\n| | Answering | Fine-tuning |\n|---|---|---|\n| Input | one table of string cells (≤ 64 rows, ≤ 32 columns) and one question | labelled questions: 130 training and 36 validation questions (TAT-QA lookups, FinQA sums), FinQA-report- and TAT-QA-table-disjoint |\n| Model | TAPAS-large (WTQ): a 24-layer encoder over the flattened table with a cell-selection head and an aggregation head | the last two encoder blocks and the three heads trained with the model's own weak-supervision loss |\n| Output | selected cells, one operator (`NONE`, `SUM`, `AVERAGE`, `COUNT`) and the pipeline's arithmetic over the cells — never an abstention | a safetensors adapter, and value-equality, strict-operator, operator and cell accuracy per question type beside two baselines |\n\n**How to use this notebook.** Choose a runtime (a GPU is strongly recommended), then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed. Sections 1–3 are **infrastructure** — the isolated environment, the carried package and the model snapshot — and their cells are collapsed; you may run them without studying them. The learning path starts in Section 4. Form fields (`# @param`) are the only values meant to be edited, and the defaults are the configuration a hosted run uses (no hosted run of this revision is recorded yet). Before each principal result the notebook asks you to **Predict**; after it come **What to notice** and a collapsible **Check your reasoning** with a worked answer. No hosted run of this revision is recorded yet, so the worked answers say what to look for and quote no number from this revision; a number from an earlier revision is labelled with that revision and was not re-run here. Section 10 is a **change-one-thing experiment**, off by default. **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end. Writing your predictions down is optional.\n\n**Roadmap:** 1–3 infrastructure → 4 the financial-table sample and a report-level split *(evaluation practice)* → 5 the inference contract on a synthetic table *(core concept: cells, operator, arithmetic)* → 6 two baselines and the frozen model per question type *(evaluation practice)* → 7 bounded fine-tuning *(core concept: weak supervision)* → 8 held-out evaluation per type → 9 re-answer, export and reload *(engineering)* → 10 change one thing (optional) → conclude."
             ),
             (
                 "## Problem statement\n\n"
                 "Analysts, auditors and students who read company financial reports ask the same kinds of question of their tables: "
-                "*what was X in 2019*, *what is the total of X over these years*, *what is the average of X*. A table-QA model answers "
+                "*what was X in 2019*, *what is the total of these items*. A table-QA model answers "
                 "by selecting cells and choosing an operator, so a deployment that adopts one needs to know two things on its own "
                 "tables before trusting it: does the model pick the right **cells**, and does it pick the right **operator**? This "
                 "notebook shows how to measure both on a labelled sample, how a small bounded fine-tuning changes them, and how to "
@@ -148,38 +155,50 @@ TEMPLATE = {
                 "The default sample comes from two public table-QA datasets built from **company financial reports** (annual "
                 "reports and SEC filings), not from Wikipedia:\n\n"
                 "- **TAT-QA** [5] — the `lookup` questions. Hybrid table-and-text questions written by finance-literate annotators; "
-                "only questions answered from the table by one or more cell spans are kept. Licence **CC BY 4.0**; Hub dataset "
-                "`next-tat/TAT-QA` at revision `c96247f5077e`, file `tatqa_dataset_train.json`.\n"
-                "- **FinQA** [6] — the `sum` and `average` questions. Questions with an executable reasoning programme over a "
-                "report's table and text; only table-only programmes that are a chain of additions (`SUM`), that chain divided "
-                "by its number of terms (`AVERAGE`), or `table_sum` / `table_average` over one row are kept, and every term must "
-                "match exactly one table cell. Licence **MIT** on the official GitHub repository (`czyssrs/FinQA` at commit "
-                "`0f16e2867bef`; train, dev and test files pooled); the Hugging Face card of `ibm-research/finqa` says **CC BY 4.0**, "
-                "so this notebook follows the stricter reading and attributes it as CC BY 4.0 too.\n\n"
+                "only questions answered from the table by one or more cell spans that lie in one column are kept. Licence "
+                "**CC BY 4.0**; Hub dataset `next-tat/TAT-QA` at revision `c96247f5077e`, file `tatqa_dataset_train.json`.\n"
+                "- **FinQA** [6] — the `sum` questions. Questions with an executable reasoning programme over a report's table and "
+                "text; only table-only programmes that are a chain of additions are kept. Every term must match exactly one "
+                "numeric cell **inside the rows FinQA names as evidence** (`gold_inds`), all terms must lie in one column, and the "
+                "converted total must agree with FinQA's displayed answer to within half a unit of its last shown digit (its "
+                "rounding); the source answer is kept beside the converted one. Licence **MIT** on the official GitHub repository "
+                "(`czyssrs/FinQA` at commit `0f16e2867bef`; train, dev and test files pooled — this is a custom tutorial split, "
+                "not the benchmark's); the Hugging Face card of `ibm-research/finqa` says **CC BY 4.0**, so this notebook follows "
+                "the stricter reading and attributes it as CC BY 4.0 too.\n\n"
+                "**Why one column.** The pinned WTQ configuration sets `select_one_column: true`: the model picks cells from one "
+                "column only, and its training loss ignores gold cells outside the column it chose. A gold answer spread across "
+                "columns could never be learned or predicted, so every gold in the sample — and every BYOD gold — lies in one "
+                "column; tables are not transposed. FinQA's averages run across a report's year columns, so after this filter "
+                "only 17 remained: **COUNT and AVERAGE are not exercised in this revision**.\n\n"
                 "**Conversion and filtering.** The first table row becomes the header (blank names filled, duplicates suffixed); "
                 "cells are whitespace-collapsed and currency or negative formats are rewritten so the pipeline's number parser "
-                "reads them (`$ 1,234` → `1,234`, `( 12 )` → `-12`). A table must fit the sample ceilings — at most 20 rows, 12 "
-                "columns and 1,000 characters — so nothing is truncated at 512 tokens. On the pinned files this keeps **1,244 of "
-                "2,055** TAT-QA table-span questions (1,965 pass the table ceilings; the rest lose their answer cell, which is a "
-                "header or occurs more than once) and **366 of 501** FinQA table-only sum/average programmes (205 sums, 161 "
-                "averages; 496 pass the table ceilings, the rest fail the one-cell-per-term match). Section 4 prints this funnel.\n\n"
+                "reads them (`$ 1,234` → `1,234`, `( 12 )` → `-12`). Tables must fit at most 20 rows, 12 columns and 1,000 "
+                "characters as a preliminary size filter; Section 4 then tokenizes every sampled question and table with the "
+                "pinned tokenizer and stops if any would be truncated at 512 tokens. On the pinned files this keeps **981 of "
+                "2,055** TAT-QA table-span questions (1,965 pass the size filter; 263 have answers in several columns; the rest "
+                "lose their answer cell, which is a header or occurs more than once) and **114** FinQA sums out of 501 table-only "
+                "sum/average programmes (197 averages dropped; of the sums, 97 span several columns, 76 have a term that matches "
+                "no single cell, 11 disagree with FinQA's displayed answer, and 1 matches only outside its evidence rows). Section 4 "
+                "prints this funnel. Passing these filters is a **necessary condition, not proof that a question is answerable from "
+                "the table alone**: the conversion drops the report text, and units, scale (thousands, millions), multi-row headers "
+                "and reporting periods can be lost with it. Section 4 shows complete examples, including a rejected one; read them "
+                "before reading any score.\n\n"
                 "**Overlap with the checkpoint (DAT9).** The pinned checkpoint was fine-tuned in a chain on SQA, WikiSQL and "
-                "WikiTableQuestions, all over Wikipedia tables; neither TAT-QA nor FinQA draws its tables from Wikipedia, and both "
-                "were released (2021) after the checkpoint, so **neither source overlaps SQA, WikiSQL or WTQ**. The BERT backbone's "
-                "pre-training on Wikipedia text and tables may still include public financial text, and that exposure was not "
-                "checked and cannot be ruled out, so the frozen scores are not a guarantee of out-of-distribution behaviour. "
-                "Both sources come from financial reports of large US companies; the two sources may share companies, and FinQA "
-                "companies recur across years, so the split keeps each **FinQA report** (one company's filing for one year) and "
-                "each **TAT-QA table** on one side — a company can still appear in two splits through different years' reports.\n\n"
-                "**What is not covered.** No question in the sample is a `COUNT` question, so `COUNT` accuracy is not measured; "
-                "the earlier WikiSQL `max`/`min` categories are gone too."
+                "WikiTableQuestions, all over Wikipedia tables. TAT-QA and FinQA are " + "not named in the documented fine-tuning chain; content overlap was not audited" + ": "
+                "they draw their tables from financial reports and were released (2021) after the checkpoint, but no audit "
+                "compared their content with the chain's data or with the BERT backbone's pre-training text, which may include "
+                "public financial text. The frozen scores are therefore not a guaranteed out-of-distribution measurement.\n\n"
+                "**Split guarantee.** The split is **FinQA-report-disjoint** (one company's filing for one year stays on one side) "
+                "and **TAT-QA-table-disjoint**, and Section 4 asserts both. Whether a TAT-QA table comes from the same report as a "
+                "FinQA table, or a company appears in two splits through different years' reports, is **not checked**; identical "
+                "normalised tables are kept out of two splits, near-duplicates are not detected."
             ),
         ]
     },
     "learning_objectives": (
         "install the pinned runtime; read what the carried package guarantees; stage and digest-verify the immutable "
         "upstream snapshot; fetch digest-pinned labelled table-question sets, convert their answers to gold cells, validate "
-        "them and split them by source report and table without leakage; answer a synthetic table through the public API and read the "
+        "them and split them by FinQA report and TAT-QA table; answer a synthetic table through the public API and read the "
         "cell/operator/numeric contract correctly (fixed threshold, argmax, pipeline arithmetic, no abstention); measure the "
         "frozen model's value-equality and strict-operator accuracy (co-primary) plus operator and cell accuracy per question "
         "type beside two non-neural baselines; run a "
@@ -190,11 +209,11 @@ TEMPLATE = {
     "exclusions": (
         "conversational or multi-turn table QA (the SQA setting), tables with more than `MAX_ROWS` rows or `MAX_COLUMNS` "
         "columns, non-English tables, text-to-SQL or arbitrary computation beyond the four aggregation operators, the "
-        "`MAX`/`MIN` operators, **`COUNT` accuracy** (the default sample has no `COUNT` questions in this revision), "
+        "`MAX`/`MIN` operators, **`COUNT` and `AVERAGE` accuracy** (the default sample has no such questions in this revision), "
         "questions that need text outside the table (TAT-QA and FinQA questions of that kind are filtered out), arithmetic "
         "beyond a sum or an average (differences, ratios, percentage changes), fine-tuning of the embeddings or of any encoder "
-        "block but the last ones, evaluation on TAT-QA, FinQA or WikiTableQuestions proper (only one seeded 365-question "
-        "sample is scored here), and any claim that three question types on financial-report tables stand in for your "
+        "block but the last ones, evaluation on TAT-QA, FinQA or WikiTableQuestions proper (only one seeded 226-question "
+        "sample is scored here), and any claim that two question types on financial-report tables stand in for your "
         "tables. The repository exposes none of these."
     ),
     "prerequisites": [
@@ -212,27 +231,28 @@ TEMPLATE = {
                 "## 4. Financial-table sample and split\n\n"
                 "`fetch_corpus` returns each pinned file from the cache under `weights/table-qa-corpora/` or its source — every "
                 "cached or fetched copy is refused on a byte-count or SHA-256 mismatch. `sample_candidates` converts them: "
-                "`tatqa_candidates` keeps TAT-QA's table-span questions whose answer cells each occur once in a table that fits the "
-                "sample ceilings (at most 20 rows, 12 columns and 1,000 characters, so nothing is truncated at 512 tokens), and "
-                "`finqa_candidates` keeps FinQA's table-only sum and average programmes whose every term matches exactly one cell "
-                "and whose pipeline arithmetic reproduces FinQA's executed answer. `build_sample_dataset` shuffles each source's "
-                "**groups** — a FinQA report (one company's filing for one year) or a TAT-QA table — assigns each group to one "
-                "split first, then draws 80 lookups, 60 sums and 60 averages for training and 20 / 35 per type for validation / "
-                "test (200 / 60 / 105). There is no `count` type: COUNT is not exercised in this revision. `validate_dataset` checks "
-                "every record against the contract — including that each operator denotation is what the pipeline's arithmetic "
-                "produces from the gold cells — `check_split_disjoint` asserts no table (by normalised content) is shared, and the "
-                "training split is written to `outputs/{stem}_train.jsonl` in the BYOD shape.\n\n"
-                "Look for: the filter funnel (questions per source before and after the table ceilings and the gold-cell match), "
-                "the three categories with 80 / 60 / 60 in training and 20 / 35 elsewhere, three digests, and four refusal probes — "
-                "a duplicate id, a coordinate outside the table, an operator denotation that disagrees with its cells, and a dataset "
-                "too small to use — each rejected before the model does anything.\n\n"
+                "`tatqa_candidates` keeps TAT-QA's table-span questions whose answer cells each occur once and lie in one column, "
+                "and `finqa_candidates` keeps FinQA's table-only addition chains whose every term matches one cell inside the "
+                "evidence rows, in one column, agreeing with FinQA's displayed answer within its rounding. `build_sample_dataset` "
+                "shuffles each source's **groups** — a FinQA report or a TAT-QA table — assigns each group to one split first, "
+                "then draws 80 lookups and 50 sums for training and 18 / 30 per type for validation / test (130 / 36 / 60). There "
+                "is no `count` or `average` type. `validate_dataset` checks every record against the contract — including that "
+                "each sum's denotation is what the pipeline's arithmetic produces from the gold cells and that the gold cells lie "
+                "in one column — `check_split_disjoint` asserts no table (by normalised content) and `check_group_disjoint` no "
+                "FinQA report or TAT-QA table is shared, `pipe.token_report` tokenizes every sampled question and table with the "
+                "pinned tokenizer and stops the notebook if any would be truncated, and the training split is written to "
+                "`outputs/{stem}_train.jsonl` in the BYOD shape.\n\n"
+                "Look for: the filter funnel, the two categories with 80 / 50 in training and 18 / 30 elsewhere, three digests, "
+                "`max_tokens` below 512 with no truncated question, three complete examples — a sum, a lookup and a FinQA average "
+                "the converter **rejected**, with the reason — and four refusal probes (a duplicate id, a coordinate outside the "
+                "table, an operator denotation that disagrees with its cells, and a dataset too small to use).\n\n"
                 "*Evaluation practice.* **Bring your own data (optional):** set `USE_BYOD = True` and either `BYOD_PATH` (a JSONL "
                 "file in this runtime — this works on Colab, Kaggle and Jupyter) or leave `BYOD_PATH` empty to upload exactly one "
                 "file through the Colab dialog; then choose **Run after** from this cell. This cell first puts the model back to "
                 "the pinned base, so Section 6's frozen row and Section 7's epoch 0 are the untouched checkpoint. The effective "
                 "minimum is 12 questions (one per table over 12 tables, or two per table over 6).\n\n"
-                "**Predict before running:** several questions share a table, and one company files a report every year. Why does "
-                "the split keep every question of a table — and every table of a report — on one side?"
+                "**Predict before running:** several questions share a table, and one report holds several tables. Why does the "
+                "split keep every question of a table — and every table of a FinQA report — on one side?"
             ),
             "code": (
                 "import csv\n"
@@ -302,13 +322,41 @@ TEMPLATE = {
                 "dataset_manifests = {{name: validate_dataset(part, min_records=MIN_RECORDS if name == 'train' else 1) for name, part in splits.items()}}\n"
                 "splits = {{name: manifest['records'] for name, manifest in dataset_manifests.items()}}\n"
                 "disjoint = check_split_disjoint(splits)\n"
+                "group_counts = check_group_disjoint(splits)\n"
+                "token_check = pipe.token_report([r for part in splits.values() for r in part])\n"
+                "print({{'token_check': {{k: token_check[k] for k in ('n', 'max_tokens', 'max_allowed')}}, 'truncated': len(token_check['truncated'])}})\n"
+                "if token_check['truncated']:\n"
+                "    message = f\"{{len(token_check['truncated'])}} question(s) would be truncated at MAX_TOKENS={{MAX_TOKENS}}, so part of their table would be invisible to the model: {{token_check['truncated'][:5]}}\"\n"
+                "    if USE_BYOD:\n"
+                "        refuse_byod(message + ' — shorten those tables.')\n"
+                "    raise RuntimeError(message)\n"
                 "train_records, val_records, test_records = splits['train'], splits['validation'], splits['test']\n"
                 "write_dataset_jsonl(train_records, 'outputs/{stem}_train.jsonl')\n"
-                "print({{'data_source': data_source, 'raw_rows': raw_rows, 'splits': disjoint}})\n"
+                "print({{'data_source': data_source, 'raw_rows': raw_rows, 'splits': disjoint, 'groups_per_split': group_counts}})\n"
                 "for name, manifest in dataset_manifests.items():\n"
                 "    print({{name: {{'n': manifest['n_records'], 'tables': manifest['n_tables'], 'categories': manifest['category_counts'], 'aggregations': manifest['aggregation_counts'], 'table_shape': manifest['table_shape'], 'digest': manifest['digest'][:16] + '...'}}}})\n"
-                "example = train_records[0]\n"
-                "print({{'example': {{'id': example['id'], 'category': example.get('category'), 'question': example['question'], 'source': example.get('source'), 'program': example.get('program'), 'answer': example['answer'], 'columns': list(example['table']), 'rows': len(next(iter(example['table'].values())))}}}})\n\n"
+                "# Complete examples: read the table, the question and the gold before trusting any score.\n"
+                "def show_table(table, width=28):\n"
+                "    columns = list(table)\n"
+                "    widths = [min(width, max(len(str(v)) for v in [c, *table[c]])) for c in columns]\n"
+                "    print(' | '.join(str(c)[:width].ljust(w) for c, w in zip(columns, widths)))\n"
+                "    for row in zip(*table.values()):\n"
+                "        print(' | '.join(str(v)[:width].ljust(w) for v, w in zip(row, widths)))\n\n\n"
+                "for category in sorted({{r.get('category') for r in train_records}}):\n"
+                "    example = next(r for r in train_records if r.get('category') == category)\n"
+                "    print(f\"--- {{category}} example {{example['id']}} ---\")\n"
+                "    show_table(example['table'])\n"
+                "    print({{'question': example['question'], 'gold': example['answer'], 'source_answer': example.get('source_answer'), 'program': example.get('program')}})\n"
+                "if not USE_BYOD:\n"
+                "    finqa_raw = [ex for ex in json.loads(corpora['finqa-train'].decode('utf-8')) if str(ex['qa'].get('program', '')).startswith('add(') and 'divide(' in str(ex['qa'].get('program', ''))]\n"
+                "    for ex in finqa_raw:\n"
+                "        reasons = {{}}\n"
+                "        finqa_candidates([ex], reasons, operators=('SUM', 'AVERAGE'))\n"
+                "        if reasons.get('finqa_rejected_multi_column'):\n"
+                "            break\n"
+                "    print('--- rejected FinQA example ---')\n"
+                "    show_table({{f'{{i}}: {{h}}': [row[i] for row in ex['table'][1:]] for i, h in enumerate(ex['table'][0])}})\n"
+                "    print({{'question': ex['qa']['question'], 'program': ex['qa']['program'], 'source_answer': ex['qa'].get('answer'), 'rejected_because': 'its terms lie in several columns (one row across years); the WTQ head selects from one column, and AVERAGE is not drawn in this revision'}})\n\n"
                 "probes = {{\n"
                 "    'duplicate id': [{{**r, 'id': 'same'}} for r in train_records[:8]],\n"
                 "    'coordinate outside the table': [{{**train_records[0], 'answer': {{**train_records[0]['answer'], 'coordinates': [[999, 0]]}}}}, *train_records[1:8]],\n"
@@ -325,7 +373,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                '**What to notice:** the filter funnel, 200 / 60 / 105 questions, the per-split category counts (no `count`), `shared_tables` of zero and the four refusals.\n\n<details><summary>Check your reasoning</summary>Questions about one table share its layout and often its answers; split by question, the model could be tested on a table it was trained on and the score would measure memory of that table. A company\'s report for one year repeats many of the same rows across its tables, so FinQA is split by report, not just by table. The test questions then sit on tables unseen by this notebook\'s fine-tuning (the checkpoint\'s own pre-training exposure is discussed in the Data context).</details>'
+                '**What to notice:** the filter funnel, 130 / 36 / 60 questions, the per-split category counts (no `count` or `average`), `groups_per_split`, `max_tokens`, the three examples and the four refusals. If an example question needs a unit, a scale or a period the table does not show, that is a limit of the conversion, not of the model.\n\n<details><summary>Check your reasoning</summary>Questions about one table share its layout and often its answers; split by question, the model could be tested on a table it was trained on and the score would measure memory of that table. A company\'s report for one year repeats many of the same rows across its tables, so FinQA is split by report, not just by table; TAT-QA has no report identity and is split by table. The test questions then sit on tables unseen by this notebook\'s fine-tuning (the checkpoint\'s own pre-training exposure is discussed in the Data context).</details>'
             ),
         },
         {
@@ -342,7 +390,7 @@ TEMPLATE = {
                 "`numeric_answer` with `numeric_answer_source`, `unparsed_cells`, `aggregation_logits`, `n_tokens`, "
                 "`tokens_before_truncation`, `rows_kept`, `truncated` and the decision rule; the per-grid `evaluation_report` "
                 "on three authored questions is `sample-sanity` — plumbing evidence, not a measurement; whether the model is "
-                "*right* is what Section 6 measures on 105 questions.\n\n"
+                "*right* is what Section 6 measures on 60 questions.\n\n"
                 "*Core concept.* TAPAS never writes a number: it selects cells and picks an operator, and the pipeline does the "
                 "arithmetic. The cell threshold and the operator argmax are decisions, not calibrated probabilities.\n\n"
                 "**Predict before running:** the population cells carry thousands separators (`1,846,513`). Will the SUM question "
@@ -395,7 +443,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "**What to notice:** each question's operator, its cells, `numeric_answer` and `unparsed_cells`.\n\n<details><summary>Check your reasoning</summary>If the model selects the Manila and Davao cells and picks `SUM`, yes: the pipeline parses thousands commas, so the total is exact. A wrong answer here is a cell or operator choice, not arithmetic — read `aggregation` and `cells` first. Three authored questions are plumbing evidence; Section 6 measures accuracy on 105.</details>"
+                "**What to notice:** each question's operator, its cells, `numeric_answer` and `unparsed_cells`.\n\n<details><summary>Check your reasoning</summary>If the model selects the Manila and Davao cells and picks `SUM`, yes: the pipeline parses thousands commas, so the total is exact. A wrong answer here is a cell or operator choice, not arithmetic — read `aggregation` and `cells` first. Three authored questions are plumbing evidence; Section 6 measures accuracy on 60.</details>"
             ),
         },
         {
@@ -406,8 +454,11 @@ TEMPLATE = {
                 "produces. Two rules are **co-primary**: **value-equality accuracy** (`value_accuracy`: the final answer's value "
                 "equals the gold value whatever operator produced it — a `NONE` answer whose one cell equals a sum's gold number "
                 "counts as right) and **strict-operator accuracy** (`strict_accuracy`: the operator must also be the gold one). "
-                "Neither is a headline: value-equality asks *is the answer right*, strict-operator asks *was it reached the intended "
-                "way*, and a gap between them is the operator error this notebook is about. **Aggregation accuracy** (the "
+                "Neither is a headline: strict-operator is **the correct value plus agreement with the reference operator**, and the "
+                "gap between the rules counts correct-value answers reached with a different operator — not necessarily a wrong "
+                "method: a lookup of a reported total can be a valid way to answer a question the reference sums, and the right "
+                "operator over the wrong cells can still land on the right value. Cell accuracy and the examples are the evidence "
+                "about how an answer was reached. **Aggregation accuracy** (the "
                 "predicted operator equals the record's) and **cell accuracy** (the selected coordinates equal the record's as a "
                 "set) are diagnostics. All four are reported overall and per question type. The **first-cell "
                 "floor** answers every question with the first cell of the first column and `NONE`. The **keyword lookup** "
@@ -443,7 +494,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "**What to notice:** the three measures per system, and `aggregation` per type in `by_category_frozen`.\n\n<details><summary>Check your reasoning</summary>It can: FinQA questions say *total* and *average* outright, so the keyword rule's operator column can be strong on `sum` and `average` while its cell choice — and therefore both answer rules — stays weak. The frozen model usually finds better cells; whether it also picks `SUM` and `AVERAGE` when asked is what the strict-operator column shows. Read the two answer rules side by side: where value-equality is well above strict-operator, the model reached the right number the wrong way (for example a `NONE` lookup of a cell that happens to equal the sum). No hosted numbers for this revision are recorded yet; read yours.</details>"
+                "**What to notice:** the three measures per system, and `aggregation` per type in `by_category_frozen`.\n\n<details><summary>Check your reasoning</summary>It can: FinQA sum questions often say *total* outright, so the keyword rule may pick `SUM` for them while its cell choice — and therefore both answer rules — stays weak. Whether the frozen model picks better cells, and whether it picks `SUM` when the reference does, is what your run shows; no hosted numbers for this revision are recorded yet. Read the two answer rules side by side: where value-equality is above strict-operator, those answers have the right value with a different operator than the reference — look at a few before calling them right or wrong. A frozen model that scores near zero is a possible outcome on this domain, and a valid one to report.</details>"
             ),
         },
         {
@@ -458,9 +509,9 @@ TEMPLATE = {
                 "would let the model's aggregate mask re-route it to cell selection whenever it prefers `NONE`, which is the "
                 "failure being adapted away. AdamW at a fixed learning rate, gradient clipping at 1.0, seeded shuffling, "
                 "batches padded to their longest table, no scheduler. Epoch 0 records the frozen model's validation metrics; "
-                "every epoch is scored on the 60 validation questions and the epoch with the highest validation **score** — "
-                "the mean of value-equality, aggregation and cell accuracy, a steadier selector than one answer rule alone on "
-                "60 questions — is kept. Epoch selection reads the validation split only; the test split is not consulted.\n\n"
+                "every epoch is scored on the 36 validation questions and the epoch with the highest validation **score** — "
+                "the mean of value-equality, aggregation and cell accuracy (the owner's chosen selector; the three are correlated, "
+                "so this is not a claim of extra stability) — is kept; if no epoch beats epoch 0, the frozen weights are kept. Epoch selection reads the validation split only; the test split is not consulted.\n\n"
                 "**What to look for:** the training loss and the validation aggregation accuracy per epoch, and which epoch the "
                 "score selects. (What did not work in earlier revisions is listed at the end.)\n\n"
                 "*Core concept.* Every call to `pipe.adapt` starts from the **pinned base**: tensors an earlier call (or an "
@@ -492,7 +543,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                '**What to notice:** the epoch-0 row (the frozen model on validation), the jump in `val_aggregation_accuracy`, and `best_epoch`.\n\n<details><summary>Check your reasoning</summary>It helps the types whose operator the frozen model gets wrong — on this sample, `sum` and `average` questions the WTQ head answers with `NONE` — and it can hurt a type it already handled, such as lookups. Section 8 shows per type which happened in your run. The training loss keeps falling while the validation score picks an earlier or later epoch: the score, not the loss, decides.</details>'
+                '**What to notice:** the epoch-0 row (the frozen model on validation), whether `val_aggregation_accuracy` moves at all, and `best_epoch` (0 means the fine-tune never beat the frozen model on validation).\n\n<details><summary>Check your reasoning</summary>It can help a type whose operator the frozen model gets wrong — if your epoch-0 row shows sum questions answered with another operator, those — and it can hurt a type it already handled, such as lookups. On 36 validation questions a change of one question is about three points. Section 8 shows per type what happened in your run; no hosted run of this revision is recorded yet. The training loss keeps falling while the validation score may pick an earlier epoch, or epoch 0: the score, not the loss, decides, and \'no gain\' is a result.</details>'
             ),
         },
         {
@@ -504,13 +555,15 @@ TEMPLATE = {
                 "repeated. Read it in this order: the two co-primary answer rules together — **value-equality** and "
                 "**strict-operator** — then **aggregation accuracy** (what the adaptation teaches) and **cell accuracy**, then the "
                 "per-type rows — both answer rules and the **operator accuracy per type**, because an overall operator gain can "
-                "hide a type whose operator the model *unlearned*. On 35 questions per type, one question is about three points; "
-                "on 105, the answer rules move by single questions, in either direction across runs. The "
+                "hide a type whose operator the model *unlearned*. On 30 questions per type, one question is about three points; "
+                "on 60, the answer rules move by single questions, in either direction across runs. Every lookup is TAT-QA and "
+                "every sum is FinQA, so a per-type difference is also a difference between the two datasets. A run where "
+                "nothing rises is a valid outcome: report it as such, with the per-type rows. The "
                 "cell records verdicts — whether each measure rose — instead of asserting them, so "
                 "a set where the frozen model already picks every operator (aggregation 1.0) still completes, exports and "
                 "writes the result. One seeded split gives **no dispersion estimate**; the deltas are "
-                "sample-sanity evidence that the adaptation contract works, not a benchmark, and a gain on three question types "
-                "over financial-report tables says nothing about your tables until you measure them. COUNT is not measured."
+                "held-out performance on one sample, not a benchmark, and a change on two question types over financial-report "
+                "tables says nothing about your tables until you measure them. COUNT and AVERAGE are not exercised in this revision."
             ),
             "code": (
                 "adapted_test = pipe.evaluate(test_records)\n"
@@ -548,7 +601,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "**What to notice:** the overall `delta_vs_frozen`, then `by_category` — answer and operator accuracy per type — and `operator_regressions`.\n\n<details><summary>Check your reasoning</summary>Look first at the gap between the two answer rules: a fine-tune that teaches the operator should raise strict-operator accuracy more than value-equality, because a frozen model that answers a sum with a `NONE` lookup of the right total is already right by value. Then read `operator_regressions`: on the previous revision (blob `f8e0d361`, WikiSQL sample; Colab CLI T4 run of 2026-10-10 at `1f8ba58`), the same recipe raised aggregation accuracy from 0.567 to 0.807 while `sum` operator accuracy fell from 0.88 to 0.56 — numbers quoted from that run on different data, not re-run here. The lesson carries over: an overall operator gain can hide a regression on one type, and single-question movements are noise.</details>"
+                "**What to notice:** the overall `delta_vs_frozen`, then `by_category` — answer and operator accuracy per type — and `operator_regressions`.\n\n<details><summary>Check your reasoning</summary>Look first at the gap between the two answer rules: if the fine-tune teaches the reference operator, strict-operator accuracy can rise more than value-equality, because an answer with the right value and a different operator already counts under value-equality. If neither moves, that is the result of this run. Then read `operator_regressions`: on the previous revision (blob `f8e0d361`, WikiSQL sample; Colab CLI T4 run of 2026-10-10 at `1f8ba58`), the same recipe raised aggregation accuracy from 0.567 to 0.807 while `sum` operator accuracy fell from 0.88 to 0.56 — numbers quoted from that run on different data, not re-run here. The lesson carries over: an overall operator gain can hide a regression on one type, and single-question movements are noise.</details>"
             ),
         },
         {
@@ -599,7 +652,7 @@ TEMPLATE = {
                 "    'model_license': MODEL_LICENSE,\n"
                 "    'snapshot': {{'path': str(WEIGHTS_DIR), 'files': len(snapshot['files']), 'total_bytes': snapshot.get('totalBytes'), 'fetched_this_run': fetched, 'weight_file': WEIGHT_FILE, 'weight_format': 'safetensors, digest-verified', 'weight_sha256': pipe.weight_sha256}},\n"
                 "    'data_source': data_source,\n"
-                "    'corpus': {{'name': CORPUS_NAME, 'files': CORPUS_PINS, 'license': CORPUS_LICENSE, 'sample_digest': SAMPLE_DIGEST, 'categories': list(SAMPLE_CATEGORIES), 'count_exercised': False}},\n"
+                "    'corpus': {{'data_mode': 'byod' if USE_BYOD else 'default', 'split_seed': SPLIT_SEED, 'sources': None if USE_BYOD else {{'name': CORPUS_NAME, 'files': CORPUS_PINS, 'license': CORPUS_LICENSE}}, 'observed_categories': sorted({{str(r.get('category')) for part in splits.values() for r in part}}), 'observed_operators': sorted({{r['answer']['aggregation'] for part in splits.values() for r in part}}), 'split_digests': {{name: manifest['digest'] for name, manifest in dataset_manifests.items()}}, 'reference_default_sample_digest': {{'value': SAMPLE_DIGEST, 'label': 'digest of the default seed-42 draw; matches this run only when data_mode is default and split_seed is 42'}}, 'filter_funnel': None if USE_BYOD else funnel, 'token_check': {{k: token_check[k] for k in ('n', 'max_tokens', 'truncated')}}}},\n"
                 "    'inference_contract': {{'input_manifest': input_manifest, 'ceilings': ceilings, 'sample': {{'name': 'synthetic_cities_table', 'sample_sha256': sample_sha256, 'golds': golds}}, 'frozen_report': frozen_scene, 'adapted_report': adapted_scene, 'answers_file': 'outputs/{stem}_answers.csv'}},\n"
                 "    'decision_rule': DECISION_RULE,\n"
                 "    'numeric_answer_source': NUMERIC_ANSWER_SOURCE,\n"
@@ -615,7 +668,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "**What to notice:** the frozen and adapted rows for each city question in `outputs/{stem}_answers.csv`, and the reload parity line.\n\n<details><summary>Check your reasoning</summary>Not necessarily: the city table's questions include a `COUNT`, which this sample never trains, and a sum over population cells, so a changed answer would be a finding about change outside the corpus — from three questions, not a measurement. Reload parity is a contract check: the cell asserts eight of eight identical answers, so a completed run means it held.</details>"
+                "**What to notice:** the frozen and adapted rows for each city question in `outputs/{stem}_answers.csv`, and the reload parity line.\n\n<details><summary>Check your reasoning</summary>Not necessarily: the city table's questions include a `COUNT`, which this sample never trains, and a sum over population cells in one column, so a changed answer would be a finding about change outside the corpus — from three questions, not a measurement. Reload parity is a contract check of serialisation: the cell asserts eight of eight identical answers, so a completed run means the saved adapter reproduces the in-memory model — it says nothing about whether those answers are right.</details>"
             ),
         },
         {
@@ -676,26 +729,26 @@ TEMPLATE = {
                 "<details><summary>Check your reasoning</summary>No experiment run of this revision is recorded. On the previous "
                 "revision's WikiSQL sample (build record of blob `11134191` at `b0ebfe4`, workstation CPU; not re-run here), four "
                 "blocks at the same rate raised operator accuracy about as much as two while lookups fell. That is an observation "
-                "from one untuned run, not a mechanism. On 35 questions per type, read a difference of one or two questions as "
+                "from one untuned run, not a mechanism. On 30 questions per type, read a difference of one or two questions as "
                 "noise, and look for the trade between operator and lookup rows rather than the overall number.</details>"
             ),
         },
     ],
     "closing": (
         "## Interpretation and limits\n\n"
-        "This revision has no hosted run yet, so this section states what the run measures and how to read it rather than "
-        "quoting results. The frozen WTQ checkpoint meets financial-report tables it was not fine-tuned on; the two "
-        "co-primary rules separate *is the answer right* (value-equality) from *was it reached with the intended operator* "
-        "(strict-operator), and the fine-tuning of the last two encoder blocks and the heads on 200 questions is read on "
-        "both, per question type, against two non-neural baselines and the frozen model. The claim the notebook supports is "
-        "that the adaptation contract works end to end on a real labelled table-question set and that its numbers are read "
-        "on several measures rather than one; the 100 MB adapter reloads to identical answers (asserted).\n\n"
-        "The test split is 105 questions from one seeded draw of one sample, the validation split that picks the epoch is 60, "
-        "and the answer rules move in steps of one question. So a gain here says the contract works, not that the adapted "
-        "model is better on your tables, that a sigmoid threshold or an argmax is a probability, or that the pipeline's "
-        "arithmetic is right when the cells are wrong — it still returns some cells and some operator for every question, "
-        "and it is confidently wrong when it is wrong. **COUNT is not exercised:** no question in the sample needs it, so "
-        "nothing here says whether the adaptation helps or harms `COUNT`. Fine-tuning on a narrow set can also erode the "
+        "This revision has no hosted run yet, so this section says what a run reports and how to read it rather than quoting "
+        "results. Read three outcomes **separately**. (1) **Workflow execution:** every cell ran — the pins, the data checks, "
+        "fine-tuning, export. (2) **Artifact parity:** the reloaded adapter gives identical answers on eight test questions "
+        "(asserted) — evidence about serialisation only; a model that answers everything wrongly reloads identically. "
+        "(3) **Held-out performance:** the two co-primary rules and the two diagnostics, per type, against the baselines "
+        "and the frozen model. Only (3) is about the task, and it may show no gain, a gain on one type and a loss on "
+        "another, or a frozen model near zero on this domain — each is a result to report, not a failure of the notebook.\n\n"
+        "The test split is 60 questions from one seeded draw of one sample, the validation split that picks the epoch is 36, "
+        "and the answer rules move in steps of one question. Every lookup comes from TAT-QA and every sum from FinQA, so "
+        "per-type differences also reflect the two sources. Even a gain would not show that the adapted model is better on "
+        "your tables, that a sigmoid threshold or an argmax is a probability, or that the pipeline's arithmetic is right when "
+        "the cells are wrong — it returns some cells and some operator for every question. **COUNT and AVERAGE are not exercised in this revision:** nothing "
+        "here says whether the adaptation helps or harms those operators. Fine-tuning on a narrow set can also erode the "
         "model elsewhere; the city table re-answered in Section 9 is three questions of evidence about that, not a "
         "measurement.\n\n"
         "Three things to carry to real data. **Baselines first:** the first-cell floor, the keyword lookup and the frozen "
@@ -706,10 +759,10 @@ TEMPLATE = {
         "point is refused at training time, and a mislabelled answer is learned without complaint.\n\n"
         "Successful execution proves that the recorded repository revision's package, carried in this standalone notebook, can "
         "acquire and digest-verify the pinned model snapshot, fetch and digest-verify real labelled table-question sets, "
-        "validate the demonstrated dataset contract without leakage, execute the inference contract and a bounded fine-tuning, "
+        "validate the demonstrated dataset contract with FinQA-report- and TAT-QA-table-disjoint splits, execute the inference contract and a bounded fine-tuning, "
         "evaluate against two trivial baselines and the frozen model on a table-disjoint split, and emit the shown "
         "machine-readable artifacts — without the repository being reachable. It does **not** establish benchmark superiority, "
-        "accuracy on any other domain or table shape, `COUNT` accuracy, a usable threshold, or production fitness.\n\n"
+        "held-out improvement, accuracy on any other domain or table shape, `COUNT` or `AVERAGE` accuracy, a usable threshold, or production fitness.\n\n"
         "**Optional experiments (off by default; each names its field and what to run):** Section 10 trains four encoder "
         "blocks in its own pipeline and prints it beside the default run — change `EXPERIMENT_TRAINABLE_LAYERS`, "
         "`EXPERIMENT_EPOCHS` or `EXPERIMENT_LEARNING_RATE` (for example `2e-5`) there and run that cell again. Changing "
@@ -724,6 +777,11 @@ TEMPLATE = {
         "- **One answer rule as the headline** (revisions up to `28d7bba`). Tried: a single denotation accuracy that compared "
         "list-gold questions on cells only. Observed: it ignored the predicted operator and hid the fine-tune's operator gain "
         "(review TQA-M1). Replaced by value-equality and strict-operator, reported together.\n"
+        "- **FinQA averages and one-row sums** (this revision, before the first hosted run). Tried: averages and "
+        "`table_sum` / `table_average` programmes over a report's year columns. Observed: their gold cells lie in one row "
+        "across several columns, which the pinned single-column WTQ head cannot select (`select_one_column: true`); after "
+        "a one-column filter only 17 averages remained. Rejected: `AVERAGE` is left unexercised (owner decision TQA-M3, "
+        "2026-10-16); tables were not transposed.\n"
         "- **TAT-QA for `COUNT`.** Tried while choosing the data: TAT-QA's count questions. Observed: 67 usable questions on "
         "64 tables after the gold-cell match, fewer than a split needs; FinQA has no count programme. Rejected: `COUNT` is "
         "left unexercised in this revision rather than measured on too few questions.\n"
@@ -739,8 +797,9 @@ TEMPLATE = {
         "- **Final answer** — the selected cells under `NONE`, otherwise the number the predicted operator produces.\n"
         "- **Value-equality accuracy** — the fraction of questions whose final answer has the gold value, whatever operator "
         "produced it (numbers to 1e-6 relative; a single numeric cell compares as a number).\n"
-        "- **Strict-operator accuracy** — the fraction whose operator is the gold one *and* whose value is right. Co-primary "
-        "with value-equality; neither is the headline.\n"
+        "- **Strict-operator accuracy** — the fraction with the correct value *and* agreement with the reference operator. "
+        "Co-primary with value-equality; neither is the headline, and neither proves how the answer was reached.\n"
+        "- **Single-column selection** — the pinned WTQ head selects cells from one column; every gold here lies in one.\n"
         "- **Aggregation accuracy / cell accuracy** — the operator, or the selected coordinates, equal the record's.\n"
         "- **Weak supervision** — an operator question is trained only against its number (`float_answer`); a lookup labels "
         "its gold cells.\n"

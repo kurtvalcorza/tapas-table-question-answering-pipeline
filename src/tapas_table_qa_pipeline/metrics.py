@@ -7,10 +7,12 @@ otherwise the number the predicted operator produces):
 - **value-equality** (``value_accuracy``): the final answer's value equals the gold value, whatever operator
   produced it. A ``NONE`` answer whose single cell parses to a numeric gold counts, and so does an operator
   answer whose number equals a single numeric gold cell.
-- **strict-operator** (``strict_accuracy``): the predicted operator equals the gold operator *and* the value is
-  right (for ``NONE``: the same multiset of cells).
+- **strict-operator** (``strict_accuracy``): value-equality *and* agreement with the reference operator. It does not
+  prove the reasoning: the right operator over the wrong cells can still give the right value, and a lookup of a
+  reported total can be a valid way to answer a question the reference sums.
 
-Aggregation accuracy (operator equals the record's) and cell accuracy (coordinates equal as a set) are kept as
+Aggregation accuracy (operator equals the record's) and cell accuracy (the selected coordinates equal the
+record's as a *set*: duplicates are ignored) are kept as
 diagnostics. Each measure is reported overall, per ``category`` and per gold aggregation. The baselines answer through the
 same result shape so they are scored by the same function.
 """
@@ -33,11 +35,11 @@ METRIC_DEFINITIONS = {
         "after lower-casing); in 0..1"
     ),
     "strict_accuracy": (
-        "strict-operator: fraction of questions whose predicted operator equals the gold operator and whose "
-        "value is right under value-equality; in 0..1"
+        "strict-operator: fraction of questions whose value is right under value-equality and whose predicted "
+        "operator agrees with the reference operator; in 0..1"
     ),
     "aggregation_accuracy": "fraction of questions whose predicted operator equals the record's; in 0..1",
-    "cell_accuracy": "fraction of questions whose selected coordinates equal the record's as a set; in 0..1",
+    "cell_accuracy": "fraction of questions whose selected coordinates equal the record's as a set (duplicates ignored); in 0..1",
 }
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -89,8 +91,8 @@ def _result_matches(result: Mapping[str, Any], record: Mapping[str, Any]) -> tup
     gold = answer["denotation"]
     value = value_correct(result, gold if not isinstance(gold, list) else list(gold))
     aggregation = result.get("aggregation") == answer["aggregation"]
-    predicted = sorted(tuple(int(v) for v in c) for c in result.get("coordinates", []))
-    cells = predicted == sorted(tuple(int(v) for v in c) for c in answer["coordinates"])
+    predicted = {tuple(int(v) for v in c) for c in result.get("coordinates", [])}
+    cells = predicted == {tuple(int(v) for v in c) for c in answer["coordinates"]}
     return bool(value), bool(value and aggregation), bool(aggregation), bool(cells)
 
 

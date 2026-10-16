@@ -22,6 +22,7 @@ from tapas_table_qa_pipeline import (
     SAMPLE_SPLIT,
     TAPASTableQAPipeline,
     build_sample_dataset,
+    check_group_disjoint,
     check_split_disjoint,
     clean_cell,
     dataset_digest,
@@ -32,6 +33,7 @@ from tapas_table_qa_pipeline import (
     keyword_lookup_baseline,
     load_byod_dataset,
     sample_candidates,
+    samples,
     split_dataset,
     table_digest,
     tatqa_candidates,
@@ -222,11 +224,12 @@ def _tatqa_context(t, answers=("20",), answer_type="span"):
     }
 
 
-def _finqa_example(t, program, exe_ans, company="ACME", gold=("table_1",)):
+def _finqa_example(t, program, exe_ans, company="ACME", gold=("table_1", "table_2", "table_3"), answer=None):
+    # Vertical table: one year column; rows are line items (single-column golds are possible).
     return {
         "id": f"{company}/{2000 + t}/page_1.pdf-{t}",
-        "table": [["", "2009", "2008", "2007"], ["net revenue", "$ 1,000", "$ 2,000", "$ 3,000"], ["costs", "( 100 )", "200", "300"]],
-        "qa": {"question": f"q{t}", "program": program, "exe_ans": exe_ans, "gold_inds": {k: "x" for k in gold}},
+        "table": [["", "2009", "2008"], ["net revenue", "$ 1,000", "900"], ["costs", "( 100 )", "80"], ["other", "2,000", "70"], ["total", "2,900", "1,050"]],
+        "qa": {"question": f"q{t}", "program": program, "exe_ans": exe_ans, "answer": answer if answer is not None else str(exe_ans), "gold_inds": {k: "x" for k in gold}},
     }
 
 
@@ -245,43 +248,66 @@ def test_tatqa_candidates_keep_unique_table_spans_and_count_the_funnel():
     assert stats == {"tatqa_table_span_questions": 3, "tatqa_after_table_filter": 3}
 
 
-def test_finqa_candidates_map_add_chains_averages_and_row_programmes():
+def test_finqa_candidates_ground_terms_in_evidence_rows_one_column_and_source_rounding():
+    stats = {}
     examples = [
-        _finqa_example(0, "add(1000, 2000)", 3000.0),
-        _finqa_example(1, "add(1000, 2000), add(#0, 3000), divide(#1, const_3)", 2000.0),
-        _finqa_example(2, "table_sum(net revenue, none)", 6000.0),
-        _finqa_example(3, "table_average(costs, none)", 133.33333),
-        _finqa_example(4, "subtract(2000, 1000)", 1000.0),  # not a sum or an average
-        _finqa_example(5, "add(1000, 2000)", 3000.0, gold=("text_1",)),  # needs text
-        _finqa_example(6, "add(1000, 999)", 1999.0),  # a term matches no cell
+        _finqa_example(0, "add(1000, 2000)", 3000.0, answer="3000"),  # rows 1 and 3, column 2009: kept
+        _finqa_example(1, "add(1000, 900)", 1900.0),  # one row across two columns: single-column rule rejects it
+        _finqa_example(2, "add(1000, 2000), add(#0, -100), divide(#1, const_3)", 966.67),  # AVERAGE: dropped
+        _finqa_example(3, "table_sum(net revenue, none)", 1900.0),  # one-row programme: spans columns
+        _finqa_example(4, "add(1000, 2000)", 3000.0, gold=("table_1",)),  # 2,000 only outside the evidence rows
+        _finqa_example(5, "add(1000, 2000)", 3000.0, answer="3,004"),  # disagrees with the displayed answer
+        _finqa_example(6, "add(1000, 2000)", 3000.0, gold=("text_1",)),  # needs text
+        _finqa_example(7, "add(1000, 80)", 1080.0, answer="1.1 thousand"),  # columns differ; rejected before rounding
+        _finqa_example(8, "add(80, 70)", 150.4, answer="150.4"),  # rounding: 150 vs 150.4 exceeds half a unit
+        _finqa_example(9, "add(80, 70)", 150.0, answer="150"),  # kept
     ]
-    out = finqa_candidates(examples)
-    assert [(r["category"], r["answer"]["aggregation"], r["answer"]["denotation"]) for r in out] == [
-        ("sum", "SUM", 3000.0), ("average", "AVERAGE", 2000.0), ("sum", "SUM", 6000.0), ("average", "AVERAGE", pytest.approx(133.3333333))]
-    assert out[0]["answer"]["coordinates"] == [[0, 1], [0, 2]] and out[2]["answer"]["coordinates"] == [[0, 1], [0, 2], [0, 3]]
-    assert out[0]["id"] == "finqa-ACME:2000:page_1.pdf-0" and out[0]["source_group"] == "finqa:ACME/2000"
-    validate_dataset([{k: r[k] for k in ("id", "table", "question", "answer", "category")} for r in out * 2 if True][:4] + [
-        {**r, "id": r["id"] + "b"} for r in out], min_records=8)
+    out = finqa_candidates(examples, stats)
+    assert [r["id"] for r in out] == ["finqa-ACME:2000:page_1.pdf-0", "finqa-ACME:2009:page_1.pdf-9"]
+    assert out[0]["answer"] == {"aggregation": "SUM", "coordinates": [[0, 1], [2, 1]], "denotation": 3000.0}
+    assert out[1]["answer"]["coordinates"] == [[1, 2], [2, 2]] and out[1]["source_answer"] == "150" and out[1]["conversion_discrepancy"] == 0.0
+    assert out[0]["evidence_rows"] == [0, 1, 2] and out[0]["source_group"] == "finqa:ACME/2000"
+    assert stats["finqa_dropped_average"] == 1 and stats["finqa_removed_by_evidence_rows"] == 1
+    assert stats["finqa_rejected_multi_column"] == 3 and stats["finqa_rejected_source_disagrees"] == 2
+    assert all(len({c for _, c in r["answer"]["coordinates"]}) == 1 for r in out)
+
+
+def test_source_reference_tolerance_is_half_a_unit_of_the_displayed_answer():
+    assert samples._source_reference("704", 704.0) == (704.0, pytest.approx(0.5))
+    assert samples._source_reference("12.5%", 12.4999) == (12.5, pytest.approx(0.05))
+    assert samples._source_reference("$ 1,234.56 million", 0) == (1234.56, pytest.approx(0.005))
+    value, tol = samples._source_reference("", 3.0)
+    assert value == 3.0 and tol < 1e-6
+
+
+def test_validate_dataset_refuses_gold_cells_in_several_columns():
+    table = {"name": ["a", "b"], "x": ["1", "2"], "y": ["3", "4"]}
+    record = {"id": "r0", "table": table, "question": "q", "answer": {"aggregation": "SUM", "coordinates": [[0, 1], [0, 2]], "denotation": 4.0}}
+    with pytest.raises(ValueError, match="span 2 columns .*select_one_column"):
+        validate_dataset([record], min_records=1)
+
+
+def test_check_group_disjoint_flags_a_group_in_two_splits():
+    a = {"source_group": "finqa:A/2001"}
+    assert check_group_disjoint({"train": [a], "test": [{"source_group": "finqa:B/2001"}, {}]}) == {"train": 1, "test": 1}
+    with pytest.raises(ValueError, match="appears in both"):
+        check_group_disjoint({"train": [a], "test": [a]})
 
 
 def test_build_sample_dataset_keeps_groups_disjoint_and_draws_per_category():
     contexts = [_tatqa_context(t) for t in range(40)]
     finqa = [_finqa_example(t, "add(1000, 2000)", 3000.0, company=f"C{t}") for t in range(40)]
-    finqa += [_finqa_example(t, "table_average(costs, none)", 133.3333333, company=f"C{t}") for t in range(40)]
     for i, ex in enumerate(finqa):
         ex["table"][1][0] = f"net revenue {i}"
-        ex["table"][2][0] = "costs"
-        ex["id"] = ex["id"] + f"x{i}"
     candidates = tatqa_candidates(contexts) + finqa_candidates(finqa)
-    splits = build_sample_dataset(candidates, seed=7, sizes={"train": {"lookup": 8, "sum": 6, "average": 6}, "validation": 2, "test": 3})
-    assert {k: len(v) for k, v in splits.items()} == {"train": 20, "validation": 6, "test": 9}
-    assert check_split_disjoint(splits)
-    groups = {k: {r["source_group"] for r in v} for k, v in splits.items()}
-    assert not (groups["train"] & groups["test"]) and not (groups["train"] & groups["validation"]) and not (groups["validation"] & groups["test"])
-    assert all(r["category"] != "count" for part in splits.values() for r in part)
+    sizes = {"train": {"lookup": 8, "sum": 6}, "validation": 2, "test": 3}
+    splits = build_sample_dataset(candidates, seed=7, sizes=sizes)
+    assert {k: len(v) for k, v in splits.items()} == {"train": 14, "validation": 4, "test": 6}
+    assert check_split_disjoint(splits) and check_group_disjoint(splits)
+    assert {r["category"] for part in splits.values() for r in part} == {"lookup", "sum"}
     with pytest.raises(ValueError, match="candidates, need"):
         build_sample_dataset(candidates, sizes={"train": {"lookup": 60}, "validation": 1, "test": 1})
-    assert build_sample_dataset(candidates, seed=7, sizes={"train": {"lookup": 8, "sum": 6, "average": 6}, "validation": 2, "test": 3}) == splits
+    assert build_sample_dataset(candidates, seed=7, sizes=sizes) == splits
 
 
 def test_fetch_corpus_refuses_a_file_that_does_not_match_the_pins(tmp_path):
@@ -306,6 +332,16 @@ def test_default_draw_matches_the_pinned_digest_when_the_files_are_cached():
 
 
 # --- metrics, baselines, evaluate ----------------------------------------------------------------------------
+
+
+def test_cell_accuracy_compares_coordinate_sets_and_strict_none_follows_value_equality():
+    table = {"name": ["a", "b"], "n": ["5", "7"]}
+    rec = {"id": "x", "table": table, "question": "q", "answer": {"aggregation": "NONE", "coordinates": [[0, 1]], "denotation": ["5"]}}
+    dup = {"cells": ["5", "5"], "coordinates": [[0, 1], [0, 1]], "aggregation": "NONE", "numeric_answer": None}
+    assert denotation_metrics([dup], [rec])["cell_accuracy"] == 1.0  # a set: duplicates ignored
+    numeric = {"cells": ["5.0"], "coordinates": [[1, 1]], "aggregation": "NONE", "numeric_answer": None}
+    m = denotation_metrics([numeric], [rec])
+    assert m["value_accuracy"] == 1.0 and m["strict_accuracy"] == 1.0 and m["cell_accuracy"] == 0.0
 
 
 def test_value_and_strict_rules_score_the_final_answer():
