@@ -28,8 +28,13 @@ EXPECTED_MODEL_ID = "google/tapas-large-finetuned-wtq"
 PIPELINE_CLASS = "TAPASTableQAPipeline"
 # INF1: the exact load expression the model cell must use (CUDA when visible, CPU otherwise).
 MODEL_LOAD_EXPR = f"{PIPELINE_CLASS}.from_pretrained(weights_dir=WEIGHTS_DIR)"
-# Additional 40-hex revisions a document may legitimately cite: the pinned WikiSQL parquet revision.
-KNOWN_SHAS: frozenset[str] = frozenset(("48cfb60afd0d5f9d2231ca90f76edf9f975181bc",))
+# Additional 40-hex revisions a document may legitimately cite: the pinned TAT-QA dataset revision, the pinned FinQA
+# commit, and the WikiSQL parquet revision the previous default sample used.
+KNOWN_SHAS: frozenset[str] = frozenset((
+    "c96247f5077eac447f63527fd3dcfdc58bb56d6a",
+    "0f16e2867befa6840783e58be38c9efb9229d742",
+    "48cfb60afd0d5f9d2231ca90f76edf9f975181bc",
+))
 # Colab form gates that must default to the non-interactive sample path.
 BYOD_GATES = ("USE_BYOD",)
 # Machine-readable artifacts the notebook must write (OUT1-OUT3, OUT8, DAT24, EVAL21).
@@ -43,9 +48,9 @@ EXPECTED_OUTPUTS = (
 )
 # Profile-specific code the notebook must exercise through the carried package's public API.
 CODE_MARKERS = (
-    "shard = fetch_corpus(cache_dir='weights/wikisql')",
-    "corpus = read_corpus(shard)",
-    "candidates = wikisql_candidates(corpus)",
+    "corpora = {key: fetch_corpus(key, cache_dir='weights/table-qa-corpora') for key in CORPORA}",
+    "candidates = sample_candidates(corpora, funnel)",
+    "except (ByodRefusal, ValueError, TypeError) as exc:",
     "splits = build_sample_dataset(candidates, seed=SPLIT_SEED)",
     "records = load_byod_dataset(byod_path)",
     "splits = split_dataset(records, seed=SPLIT_SEED)",
@@ -87,7 +92,10 @@ CODE_MARKERS = (
     "'model_revision': MODEL_REVISION",
     "'model_license': MODEL_LICENSE",
     "'weight_file': WEIGHT_FILE, 'weight_format': 'safetensors, digest-verified', 'weight_sha256': pipe.weight_sha256",
-    "'corpus': {'name': CORPUS_NAME, 'repo': CORPUS_REPO, 'revision': CORPUS_REVISION, 'file': CORPUS_FILE, 'bytes': CORPUS_BYTES, 'sha256': CORPUS_SHA256, 'license': CORPUS_LICENSE, 'sample_digest': SAMPLE_DIGEST}",
+    "'corpus': {'data_mode': 'byod' if USE_BYOD else 'default', 'split_seed': SPLIT_SEED,",
+    "group_counts = check_group_disjoint(splits)",
+    "token_check = pipe.token_report([r for part in splits.values() for r in part])",
+    "METRICS = ('value_accuracy', 'strict_accuracy', 'aggregation_accuracy', 'cell_accuracy')",
     "transformers.__version__",
     "pandas.__version__",
     "'device': pipe.device",
@@ -107,9 +115,18 @@ MARKDOWN_MARKERS = (
     "**the numeric answer is the pipeline's arithmetic over the selected cell strings**, never a model output",
     "**every question yields some cells and some operator**",
     "**adaptation with labelled questions**",
-    "**BSD-3-Clause**",
+    "**CC BY 4.0**",
+    "COUNT and AVERAGE are not exercised in this revision",
+    "not named in the documented fine-tuning chain; content overlap was not audited",
+    "**FinQA-report-disjoint**",
+    "select_one_column",
+    "> **⚠️ Notice.**",
+    "## Problem statement",
+    "## Data context",
+    "## What did not work",
     "**weak-supervision loss**",
-    "**denotation accuracy**",
+    "**value-equality accuracy**",
+    "**strict-operator accuracy**",
     "**aggregation accuracy**",
     "**cell accuracy**",
     "**non-neural baselines**",
@@ -119,7 +136,7 @@ MARKDOWN_MARKERS = (
     "**no dispersion estimate**",
     "**Snapshot note:**",
     "conversational or multi-turn table QA (the SQA setting)",
-    "## 4. WikiSQL sample and split",
+    "## 4. Financial-table sample and split",
     "## 5. Answer the synthetic table through the inference contract",
     "## 6. Baselines and the frozen model on the test questions",
     "## 7. Bounded fine-tuning of the last encoder blocks and the heads",
@@ -163,7 +180,7 @@ INSTALL_CELL_MARKER = "# dimer: kernel cell"
 # Specification 2.2; see docs/release-verification.md for the release gate.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SPEC = "2.2"
+NOTEBOOK_SPEC = "2.5"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 STATUS_TOKENS = ("Candidate", "Release-grade")
 PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|Insert text here|Tooltip:", re.I)
@@ -393,12 +410,9 @@ def validate_identity_consistency() -> None:
 # that no document cites any more are rejected, so the allowlist cannot go stale.
 WEIGHT_DOCS = ("README.md", "MODEL_CARD.md", "docs/WEIGHTS.md")
 EXTERNAL_WEIGHT_BYTES: dict[int, str] = {
-    3_630_670: "Salesforce/wikisql@48cfb60 default/validation/0000.parquet (dataset)",
     100_798_688: "adapter.safetensors from save_artifact (default two blocks)",
 }
 EXTERNAL_WEIGHT_DIGESTS: dict[str, str] = {
-    "806362262fe311efd659049821f857946ad7f4188385172f9c3d0411e919463e": "SAMPLE_DIGEST: dataset_digest of the default seeded WikiSQL draw",
-    "ed524cc7221e6c0010c7b57691da40897b38dce65090ecff48836989d606a347": "Salesforce/wikisql@48cfb60 default/validation/0000.parquet (dataset)",
 }
 _DIGEST = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{64}(?![0-9a-fA-F])")
 _GROUPED = r"(\d{1,3}(?:[,\u202f\u00a0 ]\d{3})+|\d+)"

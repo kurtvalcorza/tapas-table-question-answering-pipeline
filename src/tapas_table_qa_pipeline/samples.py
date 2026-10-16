@@ -1,5 +1,5 @@
-"""Labelled table-question datasets for the adaptation contract: the digest-pinned WikiSQL sample, the record
-contract and its structural validation, table-disjoint splitting, and the BYOD JSONL loader.
+"""Labelled table-question datasets for the adaptation contract: the digest-pinned financial-table sample, the
+record contract and its structural validation, table-disjoint splitting, and the BYOD JSONL loader.
 
 A record is ``{id, table, question, answer}`` where ``table`` is ``{column: [cells]}`` (every header and cell a
 str), ``question`` a non-empty str and ``answer`` the supervision in the pipeline's own vocabulary:
@@ -8,12 +8,28 @@ For ``NONE`` the denotation is the selected cells; for the three operators it is
 should produce from the selected cells (the pipeline computes it the same way at inference). An optional
 ``category`` (free text, at most 32 characters) is carried into the per-category breakdown.
 
-The default sample is drawn from the WikiSQL validation shard (BSD-3-Clause, Zhong et al. 2017) converted to
-parquet by the Hugging Face Hub at an immutable revision: the shard is fetched whole (3.6 MB), refused on any
-byte-count or SHA-256 mismatch, its SQL programme executed in pure Python to obtain the gold cells and value,
-and a seeded, table-disjoint, aggregation-stratified draw taken. WikiSQL's MAX/MIN become ``NONE`` with the
-extreme cell selected (TAPAS-WTQ has no MAX/MIN operator); its AVG is the pipeline's ``AVERAGE``. The original
-operator is kept as ``category`` (``lookup``, ``max``, ``min``, ``count``, ``sum``, ``average``).
+The default sample comes from two table-QA corpora that are **not named** in the pinned checkpoint's documented
+fine-tuning chain (SQA → WikiSQL → WTQ, all over Wikipedia tables); content overlap was not audited. Both are built from
+company financial reports:
+
+- **TAT-QA** (Zhu et al. 2021, CC BY 4.0) supplies the ``lookup`` questions: table-answered span questions whose
+  answer cells occur exactly once in the table and lie in one column (``NONE`` over those cells).
+- **FinQA** (Chen et al. 2021, MIT on GitHub; CC BY 4.0 on its Hub card) supplies the ``sum`` questions: table-only
+  programmes that are a chain of ``add``. Every term must match exactly one numeric cell inside the rows FinQA's
+  ``gold_inds`` names as evidence, and all terms must lie in one column.
+
+**Single column.** The pinned WTQ configuration has ``select_one_column: true``: the model selects cells from one
+column only, and its loss masks gold cells outside the chosen column. A gold answer spread over several columns can
+therefore never be learned or predicted, so every gold here (and every BYOD gold, see ``_check_answer``) lies in one
+column. Tables are not transposed. FinQA's averages and one-row ``table_sum`` / ``table_average`` programmes run across
+a row's year columns; after this filter only 17 averages remained, so **AVERAGE is not exercised by the default
+sample**, and neither source converts to **COUNT** (both operators stay in the pipeline and in BYOD).
+
+Each file is fetched whole at an immutable commit and refused on any byte-count or SHA-256 mismatch. Cells are
+normalised so the pipeline's number parser reads them (``$ 1,234`` → ``1,234``, ``( 12 )`` → ``-12``,
+``$ -23158 ( 23158 )`` → ``-23158``). The draw is seeded and group-disjoint per source: a FinQA report (one company's
+filing for one year) and a TAT-QA table never span two splits; whether a TAT-QA table comes from the same report as a
+FinQA one is not checked (TAT-QA carries no report identity).
 """
 # ruff: noqa: E501  -- record and pin literals are kept on single lines
 
@@ -21,7 +37,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import io
 import json
 import random
 import re
@@ -39,16 +54,51 @@ from .pipeline import (
     parse_number,
 )
 
-CORPUS_NAME = "WikiSQL (validation shard)"
-CORPUS_REPO = "Salesforce/wikisql"
-CORPUS_REVISION = "48cfb60afd0d5f9d2231ca90f76edf9f975181bc"  # refs/convert/parquet commit on the Hub
-CORPUS_FILE = "default/validation/0000.parquet"
-CORPUS_SHA256 = "ed524cc7221e6c0010c7b57691da40897b38dce65090ecff48836989d606a347"
-CORPUS_BYTES = 3_630_670
-CORPUS_ROWS = 8_421
-CORPUS_LICENSE = "BSD-3-Clause (Zhong, Xiong & Socher 2017, https://github.com/salesforce/WikiSQL)"
-CORPUS_URL = f"https://huggingface.co/datasets/{CORPUS_REPO}/resolve/{CORPUS_REVISION}/{CORPUS_FILE}"
-DEFAULT_CACHE_DIR = Path("weights") / "wikisql"
+# Pinned sources. The FinQA files are served from GitHub at a commit (immutable); the TAT-QA file from the Hub at a
+# dataset revision (immutable). FinQA's GitHub licence is MIT; the Hub card of ibm-research/finqa says CC BY 4.0, so
+# the notebook follows the stricter reading and attributes it as CC BY 4.0 as well.
+CORPORA: dict[str, dict[str, Any]] = {
+    "finqa-train": {
+        "name": "FinQA (train split)",
+        "url": "https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/train.json",
+        "revision": "0f16e2867befa6840783e58be38c9efb9229d742",
+        "bytes": 78_216_616,
+        "sha256": "49f237eb9779b569473b26b08048867d04635a7cc39ad6a7a5664c55bb428db6",
+        "license": "MIT (github.com/czyssrs/FinQA); the Hub card ibm-research/finqa says CC BY 4.0, so attribution is kept",
+        "citation": "Z. Chen et al., FinQA: A Dataset of Numerical Reasoning over Financial Data, EMNLP 2021",
+    },
+    "finqa-dev": {
+        "name": "FinQA (dev split)",
+        "url": "https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/dev.json",
+        "revision": "0f16e2867befa6840783e58be38c9efb9229d742",
+        "bytes": 10_954_658,
+        "sha256": "a847fb7e0d61a3125a1e2909852df6b89f1ee64d2c5ff1bf689e332214deee51",
+        "license": "MIT (github.com/czyssrs/FinQA); the Hub card ibm-research/finqa says CC BY 4.0, so attribution is kept",
+        "citation": "Z. Chen et al., FinQA: A Dataset of Numerical Reasoning over Financial Data, EMNLP 2021",
+    },
+    "finqa-test": {
+        "name": "FinQA (test split)",
+        "url": "https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/test.json",
+        "revision": "0f16e2867befa6840783e58be38c9efb9229d742",
+        "bytes": 14_395_143,
+        "sha256": "831dbfb2e785dbc227f895ce3f24046433467aec67b09db2bd6ac7692a8a30dc",
+        "license": "MIT (github.com/czyssrs/FinQA); the Hub card ibm-research/finqa says CC BY 4.0, so attribution is kept",
+        "citation": "Z. Chen et al., FinQA: A Dataset of Numerical Reasoning over Financial Data, EMNLP 2021",
+    },
+    "tatqa-train": {
+        "name": "TAT-QA (train split)",
+        "url": "https://huggingface.co/datasets/next-tat/TAT-QA/resolve/c96247f5077eac447f63527fd3dcfdc58bb56d6a/tatqa_dataset_train.json",
+        "revision": "c96247f5077eac447f63527fd3dcfdc58bb56d6a",
+        "bytes": 12_827_783,
+        "sha256": "c7bf8eb0c757e57ef3db6c6146dd7e487100dac1e37e66a349813ddc4187cd65",
+        "license": "CC BY 4.0 (next-tat/TAT-QA dataset card; github.com/NExTplusplus/TAT-QA README)",
+        "citation": "F. Zhu et al., TAT-QA: A Question Answering Benchmark on a Hybrid of Tabular and Textual Content in Finance, ACL 2021",
+    },
+}
+CORPUS_NAME = "TAT-QA lookups + FinQA sums (financial-report tables)"
+CORPUS_LICENSE = "TAT-QA: CC BY 4.0; FinQA: MIT (GitHub), CC BY 4.0 on its Hub card — attribution kept for both"
+CORPUS_PINS = {key: {k: spec[k] for k in ("url", "bytes", "sha256")} for key, spec in CORPORA.items()}
+DEFAULT_CACHE_DIR = Path("weights") / "table-qa-corpora"
 
 # Candidate filter (the sample must fit MAX_TOKENS untruncated so every gold cell is visible to the model).
 SAMPLE_MAX_ROWS = 20
@@ -56,18 +106,17 @@ SAMPLE_MAX_COLUMNS = 12
 SAMPLE_MAX_CHARS = 1_000  # header + cells
 SAMPLE_MAX_LOOKUP_CELLS = 4
 SAMPLE_SEED = 42
-# Per WikiSQL operator. Training keeps lookups the majority (80 of 240) as they are in WikiSQL and in most table-QA
-# use, so the adaptation does not trade lookup accuracy for operator accuracy; validation and test are stratified
-# evenly so every operator is read on the same footing (90 / 150).
+# Per category. AVERAGE and COUNT have no usable single-column source in this revision and are not drawn. Training
+# keeps lookups the larger share, so the adaptation does not trade lookup accuracy for operator accuracy; validation and
+# test are stratified evenly so both categories are read on the same footing.
 SAMPLE_SPLIT: dict[str, int | dict[str, int]] = {
-    "train": {"lookup": 80, "count": 32, "sum": 32, "average": 32, "max": 32, "min": 32},
-    "validation": 15,
-    "test": 25,
+    "train": {"lookup": 80, "sum": 50},
+    "validation": 18,
+    "test": 30,
 }
-SAMPLE_TABLE_FRACTIONS = {"train": 0.55, "validation": 0.2}  # of the candidate tables; the rest (0.25) is test
-WIKISQL_AGGREGATIONS = ("NONE", "MAX", "MIN", "COUNT", "SUM", "AVG")
-CATEGORY_OF = {"NONE": "lookup", "MAX": "max", "MIN": "min", "COUNT": "count", "SUM": "sum", "AVG": "average"}
-SAMPLE_DIGEST = "806362262fe311efd659049821f857946ad7f4188385172f9c3d0411e919463e"  # dataset_digest over the three default splits together; tests pin it
+SAMPLE_CATEGORIES = ("lookup", "sum")
+SAMPLE_TABLE_FRACTIONS = {"train": 0.5, "validation": 0.2}  # of each source's groups; the rest (0.3) is test
+SAMPLE_DIGEST = "d951b91301ca80c04c1452ae635d625975842eb8094c241c62a2281ecac2771b"  # dataset_digest over the three default splits together; tests pin it
 
 MIN_RECORDS = 8
 MAX_RECORDS = 20_000
@@ -84,88 +133,258 @@ def _normalise(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------------------------------------
-# WikiSQL: fetch, execute, draw
+# Corpora: fetch, convert, draw
 # ---------------------------------------------------------------------------------------------------------
 
 
-def fetch_corpus(*, cache_dir: str | Path | None = None, fetcher: Any = None) -> bytes:
-    """Return the pinned WikiSQL validation shard from the cache or the Hub; refuse any size/digest mismatch."""
+def fetch_corpus(key: str, *, cache_dir: str | Path | None = None, fetcher: Any = None) -> bytes:
+    """Return one pinned corpus file from the cache or its source; refuse any size/digest mismatch."""
+    spec = CORPORA[key]
     cache = Path(cache_dir) if cache_dir is not None else DEFAULT_CACHE_DIR
     cache.mkdir(parents=True, exist_ok=True)
-    local = cache / "wikisql-validation.parquet"
+    local = cache / f"{key}.json"
     data = local.read_bytes() if local.is_file() else b""
-    if len(data) != CORPUS_BYTES or _sha256_bytes(data) != CORPUS_SHA256:
+    if len(data) != spec["bytes"] or _sha256_bytes(data) != spec["sha256"]:
         if fetcher is not None:
-            data = fetcher(CORPUS_URL)
+            data = fetcher(spec["url"])
         else:
-            request = urllib.request.Request(CORPUS_URL, headers={"User-Agent": "tapas-table-qa-pipeline"})
-            with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310 - pinned https URL
+            request = urllib.request.Request(spec["url"], headers={"User-Agent": "tapas-table-qa-pipeline"})
+            with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310 - pinned https URL
                 data = response.read()
-        if len(data) != CORPUS_BYTES:
-            raise ValueError(f"{CORPUS_FILE}: {len(data)} bytes, pinned {CORPUS_BYTES}")
+        if len(data) != spec["bytes"]:
+            raise ValueError(f"{key}: {len(data)} bytes, pinned {spec['bytes']}")
         digest = _sha256_bytes(data)
-        if digest != CORPUS_SHA256:
-            raise ValueError(f"{CORPUS_FILE}: sha256 {digest} != pinned {CORPUS_SHA256}")
+        if digest != spec["sha256"]:
+            raise ValueError(f"{key}: sha256 {digest} != pinned {spec['sha256']}")
         local.write_bytes(data)
     return data
 
 
-def read_corpus(data: bytes) -> list[dict[str, Any]]:
-    """Decode the shard's ``question``, ``table`` and ``sql`` columns into plain dicts (index = shard row)."""
-    import pyarrow.parquet as pq
+_PAREN_NEG = re.compile(r"^\(\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(%?)\s*\)$")
+_PLAIN = re.compile(r"^\$?\s*(-?)\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(%?)(?:\s*\(\s*[\d,.]+\s*%?\s*\))?$")
 
-    table = pq.read_table(io.BytesIO(data), columns=["question", "table", "sql"])
-    if table.num_rows != CORPUS_ROWS:
-        raise ValueError(f"{CORPUS_FILE}: {table.num_rows} rows, pinned {CORPUS_ROWS}")
+
+def clean_cell(text: Any) -> str:
+    """Whitespace-collapse a cell and rewrite currency/negative formats so ``parse_number`` reads them; any other
+    text is returned unchanged (apart from whitespace)."""
+    t = " ".join(str(text).split())
+    m = _PAREN_NEG.match(t)
+    if m:
+        return f"-{m.group(1)}{m.group(2) or ''}{m.group(3)}"
+    m = _PLAIN.match(t)
+    if m:
+        return f"{m.group(1)}{m.group(2)}{m.group(3) or ''}{m.group(4)}"
+    return t
+
+
+def convert_table(raw: Sequence[Sequence[Any]]) -> tuple[list[str], list[list[str]], list[list[str]]] | None:
+    """First row → header (blank names filled, duplicates suffixed); body cells cleaned. Returns (header, cleaned
+    rows, original rows) or None when the table breaks a sample ceiling or is ragged."""
+    if len(raw) < 2:
+        return None
+    width = len(raw[0])
+    if any(len(r) != width for r in raw) or not 1 <= width <= SAMPLE_MAX_COLUMNS or not 1 <= len(raw) - 1 <= SAMPLE_MAX_ROWS:
+        return None
+    header: list[str] = []
+    for i, h in enumerate(raw[0]):
+        name = " ".join(str(h).split()) or ("item" if i == 0 else f"column {i + 1}")
+        while name in header:
+            name = f"{name} ({i + 1})"
+        header.append(name)
+    original = [[" ".join(str(c).split()) for c in row] for row in raw[1:]]
+    rows = [[clean_cell(c) for c in row] for row in original]
+    if any(len(c) > 200 for row in rows for c in row) or any(len(h) > 200 for h in header):
+        return None
+    if sum(len(c) for row in rows for c in row) + sum(len(h) for h in header) > SAMPLE_MAX_CHARS:
+        return None
+    return header, rows, original
+
+
+def _unique_cell(rows: Sequence[Sequence[str]], want: str) -> list[int] | None:
+    hits = [[r, c] for r, row in enumerate(rows) for c, cell in enumerate(row) if cell == want]
+    return hits[0] if len(hits) == 1 else None
+
+
+def tatqa_candidates(contexts: Sequence[Mapping[str, Any]], stats: dict[str, int] | None = None) -> list[dict[str, Any]]:
+    """``lookup`` records: table-answered span / multi-span questions whose every answer string occurs exactly
+    once among the body cells (at most ``SAMPLE_MAX_LOOKUP_CELLS``). ``stats`` (if given) receives the count of
+    eligible questions before and after the table filter."""
     out = []
-    for index, row in enumerate(table.to_pylist()):
-        row["index"] = index
-        out.append(row)
+    stats = stats if stats is not None else {}
+    for ctx in contexts:
+        eligible = [q for q in ctx["questions"] if q.get("answer_from") == "table" and q.get("answer_type") in ("span", "multi-span")]
+        stats["tatqa_table_span_questions"] = stats.get("tatqa_table_span_questions", 0) + len(eligible)
+        converted = convert_table(ctx["table"]["table"])
+        if converted is None:
+            continue
+        stats["tatqa_after_table_filter"] = stats.get("tatqa_after_table_filter", 0) + len(eligible)
+        header, rows, original = converted
+        for q in eligible:
+            answers = q["answer"] if isinstance(q["answer"], list) else [q["answer"]]
+            answers = [" ".join(str(a).split()) for a in answers]
+            if not 1 <= len(answers) <= SAMPLE_MAX_LOOKUP_CELLS:
+                continue
+            coords = [_unique_cell(original, a) for a in answers]
+            if any(c is None for c in coords) or len({tuple(c) for c in coords}) != len(coords):
+                continue
+            if len({c for _, c in coords}) != 1:
+                stats["tatqa_rejected_multi_column"] = stats.get("tatqa_rejected_multi_column", 0) + 1
+                continue
+            out.append(
+                {
+                    "id": f"tatqa-{q['uid']}",
+                    "table": {h: [row[i] for row in rows] for i, h in enumerate(header)},
+                    "question": " ".join(str(q["question"]).split()),
+                    "answer": {"aggregation": "NONE", "coordinates": coords, "denotation": [rows[r][c] for r, c in coords]},
+                    "category": "lookup",
+                    "source": "tatqa",
+                    "source_group": f"tatqa:{ctx['table']['uid']}",
+                    "source_table_id": str(ctx["table"]["uid"]),
+                }
+            )
     return out
 
 
-def _matching_rows(rows: Sequence[Sequence[str]], conds: Mapping[str, Sequence[Any]]) -> list[int]:
-    keep = []
-    for i, row in enumerate(rows):
-        ok = True
-        for col, op, cond in zip(conds["column_index"], conds["operator_index"], conds["condition"], strict=True):
-            cell = row[col]
-            if op == 0:
-                ok = _normalise(cell) == _normalise(cond)
-            else:
-                a, b = parse_number(str(cell)), parse_number(str(cond))
-                ok = a is not None and b is not None and (a > b if op == 1 else a < b)
-            if not ok:
-                break
-        if ok:
-            keep.append(i)
-    return keep
+_STEP = re.compile(r"(\w+)\(([^()]*)\)")
 
 
-def execute_sql(example: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Run one WikiSQL programme on its table. Returns the record's ``answer`` in the pipeline's vocabulary plus
-    ``category``, or None when the programme has no usable denotation (no matching row, unparseable numbers)."""
-    table, sql = example["table"], example["sql"]
-    rows, sel, op = table["rows"], int(sql["sel"]), WIKISQL_AGGREGATIONS[int(sql["agg"])]
-    matched = _matching_rows(rows, sql["conds"])
-    if not matched:
-        return None
-    cells = [str(rows[r][sel]) for r in matched]
-    coords = [[r, sel] for r in matched]
-    category = CATEGORY_OF[op]
-    if op == "NONE":
-        return {"aggregation": "NONE", "coordinates": coords, "denotation": cells, "category": category}
-    if op == "COUNT":
-        return {"aggregation": "COUNT", "coordinates": coords, "denotation": float(len(cells)), "category": category}
-    parsed = [parse_number(c) for c in cells]
-    if any(v is None for v in parsed):
-        return None
-    if op in ("MAX", "MIN"):
-        pick = max(range(len(parsed)), key=lambda i: parsed[i]) if op == "MAX" else min(range(len(parsed)), key=lambda i: parsed[i])
-        return {"aggregation": "NONE", "coordinates": [coords[pick]], "denotation": [cells[pick]], "category": category}
-    aggregation = "SUM" if op == "SUM" else "AVERAGE"
-    value, _ = compute_numeric_answer(cells, aggregation)
-    return {"aggregation": aggregation, "coordinates": coords, "denotation": float(value), "category": category}
+def _finqa_terms(program: str) -> tuple[str, list[str]] | None:
+    """(SUM|AVERAGE, leaf terms) for an add-chain, an add-chain divided by its term count, or a one-row
+    ``table_sum``/``table_average`` (leaf = ["row:<name>"]); None for any other programme."""
+    steps = [(op, [a.strip() for a in args.split(",")]) for op, args in _STEP.findall(program)]
+    if len(steps) == 1 and steps[0][0] in ("table_sum", "table_average"):
+        return ("SUM" if steps[0][0] == "table_sum" else "AVERAGE"), [f"row:{steps[0][1][0]}"]
+    leaves: list[str] = []
+    for i, (op, args) in enumerate(steps):
+        if len(args) != 2:
+            return None
+        if op == "add":
+            for a in args:
+                if a == f"#{i - 1}" and i > 0:
+                    continue
+                if a.startswith(("#", "const_")):
+                    return None
+                leaves.append(a)
+            if i > 0 and f"#{i - 1}" not in args:
+                return None
+        elif op == "divide" and i == len(steps) - 1 and i > 0:
+            if args != [f"#{i - 1}", f"const_{len(leaves)}"]:
+                return None
+            return "AVERAGE", leaves
+        else:
+            return None
+    return ("SUM", leaves) if len(leaves) >= 2 else None
+
+
+_ANSWER_NUMBER = re.compile(r"-?\d[\d,]*(?:\.(\d+))?")
+
+
+def _source_reference(answer_text: Any, exe_ans: Any) -> tuple[float, float]:
+    """(reference value, tolerance) for comparing a converted result with FinQA's own answer. FinQA's ``answer`` is the
+    value as the annotator displayed it (``704``, ``12.5%``, ``$ 1.2 million``), rounded to its last shown digit, while
+    ``exe_ans`` is the unrounded programme output. A conversion is accepted when it lies within half a unit of the last
+    displayed digit of ``answer`` — the most a correct computation can differ from a correctly rounded display — and is
+    otherwise rejected. Without a displayed number, ``exe_ans`` itself is the reference at floating-point tolerance."""
+    match = _ANSWER_NUMBER.search(str(answer_text or "").replace(" ", ""))
+    if match:
+        return float(match.group(0).replace(",", "")), 0.5 * 10 ** -len(match.group(1) or "") + 1e-9
+    value = float(exe_ans)
+    return value, 1e-9 * max(1.0, abs(value))
+
+
+def finqa_candidates(
+    examples: Sequence[Mapping[str, Any]],
+    stats: dict[str, Any] | None = None,
+    operators: Sequence[str] = ("SUM",),
+) -> list[dict[str, Any]]:
+    """``sum`` (and, if asked, ``average``) records from FinQA's table-only programmes (see `_finqa_terms`). Every
+    term must match exactly one numeric body cell inside the rows ``gold_inds`` names as evidence, all terms must lie
+    in one column (the WTQ head selects from one column), and the converted result must agree with FinQA's displayed
+    answer within its rounding (`_source_reference`). Both the source answer and the converted value are kept on the
+    record. ``stats`` (if given) receives the filter funnel, including how many examples the evidence-row constraint
+    removed and the discrepancy count and maximum."""
+    out = []
+    stats = stats if stats is not None else {}
+
+    def bump(key: str) -> None:
+        stats[key] = stats.get(key, 0) + 1
+
+    stats.setdefault("finqa_max_discrepancy", 0.0)
+    for ex in examples:
+        qa = ex["qa"]
+        if not qa.get("gold_inds") or any(not str(k).startswith("table") for k in qa["gold_inds"]):
+            continue
+        parsed = _finqa_terms(str(qa.get("program", "")))
+        if parsed is None:
+            continue
+        aggregation, leaves = parsed
+        bump("finqa_table_only_sum_average_programmes")
+        if aggregation not in operators:
+            bump(f"finqa_dropped_{aggregation.lower()}")
+            continue
+        if leaves[0].startswith("row:"):
+            bump("finqa_rejected_multi_column")  # one-row table_sum/table_average: the operands span the year columns
+            continue
+        converted = convert_table(ex["table"])
+        if converted is None:
+            continue
+        bump("finqa_after_table_filter")
+        header, rows, _original = converted
+        evidence = sorted({int(str(k).split("_", 1)[1]) - 1 for k in qa["gold_inds"]} - {-1})
+        values = [parse_number(clean_cell(v)) for v in leaves]
+        if any(v is None for v in values) or not evidence:
+            bump("finqa_rejected_unmatched")
+            continue
+        coords, reason = [], None
+        for v in values:
+            def hits(row_ids, v=v, rows=rows):
+                return [[r, c] for r in row_ids for c, cell in enumerate(rows[r]) if c > 0 and parse_number(cell) is not None and abs(parse_number(cell) - v) < 1e-9]
+            inside = hits([r for r in evidence if 0 <= r < len(rows)])
+            if len(inside) == 1:
+                coords.append(inside[0])
+                continue
+            reason = "finqa_removed_by_evidence_rows" if len(hits(range(len(rows)))) == 1 else "finqa_rejected_unmatched"
+            break
+        if reason or len({tuple(c) for c in coords}) != len(coords):
+            bump(reason or "finqa_rejected_unmatched")
+            continue
+        if len({c for _, c in coords}) != 1:
+            bump("finqa_rejected_multi_column")
+            continue
+        value, unparsed = compute_numeric_answer([rows[r][c] for r, c in coords], aggregation)
+        try:
+            reference, tolerance = _source_reference(qa.get("answer"), qa["exe_ans"])
+        except (TypeError, ValueError):
+            bump("finqa_rejected_unmatched")
+            continue
+        discrepancy = abs(float(value) - reference) if value is not None else float("inf")
+        if value is None or unparsed or discrepancy > tolerance:
+            bump("finqa_rejected_source_disagrees")
+            continue
+        if discrepancy > 1e-9:
+            bump("finqa_rounding_discrepancies")
+            stats["finqa_max_discrepancy"] = max(stats["finqa_max_discrepancy"], discrepancy)
+        rid = "finqa-" + str(ex["id"]).replace("/", ":")
+        if not _ID_RE.match(rid):
+            continue
+        out.append(
+            {
+                "id": rid,
+                "table": {h: [row[i] for row in rows] for i, h in enumerate(header)},
+                "question": " ".join(str(qa["question"]).replace("\\n", " ").split()),
+                "answer": {"aggregation": aggregation, "coordinates": coords, "denotation": float(value)},
+                "category": "sum" if aggregation == "SUM" else "average",
+                "source": "finqa",
+                "source_group": "finqa:" + "/".join(str(ex["id"]).split("/")[:2]),
+                "source_table_id": str(ex["id"]).rsplit("-", 1)[0],
+                "program": str(qa["program"]),
+                "source_answer": str(qa.get("answer", "")),
+                "source_exe_ans": float(qa["exe_ans"]),
+                "conversion_discrepancy": discrepancy,
+                "evidence_rows": evidence,
+            }
+        )
+    return out
 
 
 def table_digest(table: Mapping[str, Sequence[str]]) -> str:
@@ -175,35 +394,20 @@ def table_digest(table: Mapping[str, Sequence[str]]) -> str:
     return _sha256_bytes(payload.encode("utf-8"))
 
 
-def wikisql_candidates(examples: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Records for every shard example whose table fits the sample ceilings and whose programme executes."""
-    out = []
-    for ex in examples:
-        tb = ex["table"]
-        header, rows = [str(h) for h in tb["header"]], [[str(c) for c in row] for row in tb["rows"]]
-        if not 1 <= len(rows) <= SAMPLE_MAX_ROWS or not 1 <= len(header) <= SAMPLE_MAX_COLUMNS:
-            continue
-        if any(len(c) > 200 for row in rows for c in row) or any(len(h) > 200 for h in header):
-            continue
-        if sum(len(c) for row in rows for c in row) + sum(len(h) for h in header) > SAMPLE_MAX_CHARS:
-            continue
-        if len(set(header)) != len(header):
-            continue
-        answer = execute_sql({"table": {"rows": rows}, "sql": ex["sql"]})
-        if answer is None or (answer["aggregation"] == "NONE" and len(answer["coordinates"]) > SAMPLE_MAX_LOOKUP_CELLS):
-            continue
-        category = answer.pop("category")
-        out.append(
-            {
-                "id": f"wikisql-val-{ex['index']}",
-                "table": {h: [row[i] for row in rows] for i, h in enumerate(header)},
-                "question": str(ex["question"]),
-                "answer": answer,
-                "category": category,
-                "source_table_id": str(tb["id"]),
-                "sql": str(ex["sql"]["human_readable"]),
-            }
-        )
+def sample_candidates(corpora: Mapping[str, bytes], stats: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Every candidate record from the pinned files (keys of `CORPORA`), lookups first. ``stats`` (if given)
+    receives the filter funnel: eligible questions, after the table filter, and after gold-cell matching."""
+    tatqa = json.loads(corpora["tatqa-train"].decode("utf-8"))
+    finqa = [ex for key in ("finqa-train", "finqa-dev", "finqa-test") for ex in json.loads(corpora[key].decode("utf-8"))]
+    out, seen = [], set()
+    stats = stats if stats is not None else {}
+    for record in tatqa_candidates(tatqa, stats) + finqa_candidates(finqa, stats, operators=("SUM",)):
+        if record["id"] not in seen:
+            seen.add(record["id"])
+            out.append(record)
+    stats["tatqa_after_gold_cell_match"] = sum(r["source"] == "tatqa" for r in out)
+    stats["finqa_after_gold_cell_match"] = sum(r["source"] == "finqa" for r in out)
+    stats["finqa_max_discrepancy"] = float(stats.get("finqa_max_discrepancy", 0.0))
     return out
 
 
@@ -213,26 +417,35 @@ def build_sample_dataset(
     seed: int = SAMPLE_SEED,
     sizes: Mapping[str, int | Mapping[str, int]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Seeded draw: tables are shuffled and assigned to a split first (so no table crosses splits), then
-    ``sizes[split]`` records per WikiSQL operator (one int for all, or a per-category mapping) are drawn from
-    each split's pool."""
+    """Seeded draw: each source's groups (a FinQA report, i.e. one company's filing for one year; a TAT-QA table) are shuffled and assigned to a split
+    first, so no group crosses splits, then ``sizes[split]`` records per category (one int for all, or a
+    per-category mapping) are drawn from each split's pool. A table whose normalised content occurs in two groups
+    is kept only in the first split it reaches."""
     sizes = dict(sizes or SAMPLE_SPLIT)
     rng = random.Random(seed)
-    tables = sorted({str(c["source_table_id"]) for c in candidates})
-    rng.shuffle(tables)
-    n = len(tables)
-    train_end = int(n * SAMPLE_TABLE_FRACTIONS["train"])
-    val_end = train_end + int(n * SAMPLE_TABLE_FRACTIONS["validation"])
-    split_of = {t: ("train" if i < train_end else "validation" if i < val_end else "test") for i, t in enumerate(tables)}
+    split_of: dict[str, str] = {}
+    for source in sorted({str(c.get("source", "")) for c in candidates}):
+        groups = sorted({str(c["source_group"]) for c in candidates if str(c.get("source", "")) == source})
+        rng.shuffle(groups)
+        n = len(groups)
+        train_end = int(n * SAMPLE_TABLE_FRACTIONS["train"])
+        val_end = train_end + int(n * SAMPLE_TABLE_FRACTIONS["validation"])
+        split_of.update({g: ("train" if i < train_end else "validation" if i < val_end else "test") for i, g in enumerate(groups)})
     pools: dict[str, dict[str, list[dict[str, Any]]]] = {name: {} for name in sizes}
+    owner: dict[str, str] = {}
     for c in candidates:
-        pools[split_of[str(c["source_table_id"])]].setdefault(str(c["category"]), []).append(dict(c))
+        name = split_of[str(c["source_group"])]
+        key = table_digest(c["table"])
+        if owner.setdefault(key, name) != name:
+            continue  # identical table content already assigned to another split
+        pools[name].setdefault(str(c["category"]), []).append(dict(c))
     out: dict[str, list[dict[str, Any]]] = {}
     for name, spec in sizes.items():
         drawn = []
-        for category in sorted(pools[name]):
+        categories = sorted(spec) if isinstance(spec, Mapping) else sorted(pools[name])
+        for category in categories:
             per = int(spec[category]) if isinstance(spec, Mapping) else int(spec)
-            items = pools[name][category]
+            items = pools[name].get(category, [])
             rng.shuffle(items)
             if len(items) < per:
                 raise ValueError(f"{name}/{category}: only {len(items)} candidates, need {per}")
@@ -242,9 +455,19 @@ def build_sample_dataset(
     return out
 
 
+def candidate_summary(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Counts the notebook prints: questions and distinct groups per category, after conversion and filtering."""
+    out: dict[str, Any] = {}
+    for category in sorted({str(c["category"]) for c in candidates}):
+        items = [c for c in candidates if c["category"] == category]
+        out[category] = {"questions": len(items), "groups": len({c["source_group"] for c in items}), "source": items[0].get("source")}
+    return out
+
+
 def fetch_sample_dataset(*, cache_dir: str | Path | None = None, seed: int = SAMPLE_SEED) -> dict[str, list[dict[str, Any]]]:
-    """fetch → read → candidates → draw, in one call."""
-    return build_sample_dataset(wikisql_candidates(read_corpus(fetch_corpus(cache_dir=cache_dir))), seed=seed)
+    """fetch → convert → draw, in one call."""
+    corpora = {key: fetch_corpus(key, cache_dir=cache_dir) for key in CORPORA}
+    return build_sample_dataset(sample_candidates(corpora), seed=seed)
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -273,6 +496,12 @@ def _check_answer(answer: Any, columns: Sequence[str], rows: Sequence[Sequence[s
         if [r, c] in checked_coords:
             raise ValueError(f"{where}: duplicate coordinate {[r, c]}")
         checked_coords.append([r, c])
+    if len({c for _, c in checked_coords}) != 1:
+        names = sorted({columns[c] for _, c in checked_coords})
+        raise ValueError(
+            f"{where}: the gold cells span {len(names)} columns {names}; the pinned WTQ model selects cells from one "
+            "column only (select_one_column), so this answer can never be learned or predicted — use gold cells from one column"
+        )
     denotation = answer.get("denotation")
     cells = [rows[r][c] for r, c in checked_coords]
     if aggregation == "NONE":
@@ -312,7 +541,7 @@ def _check_record(record: Any, index: int) -> dict[str, Any]:
         if not isinstance(category, str) or not 1 <= len(category.strip()) <= MAX_CATEGORY_CHARS:
             raise ValueError(f"{where}: category must be a str of 1..{MAX_CATEGORY_CHARS} characters")
         item["category"] = category.strip()
-    for key in ("source_table_id", "sql"):
+    for key in ("source", "source_group", "source_table_id", "program", "source_answer"):
         if key in record:
             item[key] = str(record[key])
     return item
@@ -373,6 +602,21 @@ def check_split_disjoint(splits: Mapping[str, Sequence[Mapping[str, Any]]]) -> d
                 raise ValueError(f"table of {record['id']!r} appears in both {seen[key]} and {name}")
             seen[key] = name
     return {name: len(records) for name, records in splits.items()}
+
+
+def check_group_disjoint(splits: Mapping[str, Sequence[Mapping[str, Any]]]) -> dict[str, Any]:
+    """Assert no source group (a FinQA report, a TAT-QA table) appears in two splits; records without a
+    ``source_group`` (BYOD) are not grouped. Returns the group count per split."""
+    seen: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    for name, records in splits.items():
+        groups = {str(r["source_group"]) for r in records if r.get("source_group")}
+        counts[name] = len(groups)
+        for group in groups:
+            if group in seen and seen[group] != name:
+                raise ValueError(f"source group {group!r} appears in both {seen[group]} and {name}")
+            seen[group] = name
+    return counts
 
 
 def _split_tables(n_tables: int, val_fraction: float, test_fraction: float) -> tuple[int, int, int]:
@@ -487,13 +731,13 @@ def write_dataset_jsonl(records: Sequence[Mapping[str, Any]], path: str | Path) 
 
 
 def write_dataset_csv(records: Sequence[Mapping[str, Any]], path: str | Path) -> Path:
-    """A human-readable summary (id, category, aggregation, question, sql, denotation), not the BYOD format."""
+    """A human-readable summary (id, category, source, aggregation, question, FinQA programme, denotation), not the BYOD format."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["id", "category", "aggregation", "question", "sql", "denotation"])
+        writer.writerow(["id", "category", "source", "aggregation", "question", "program", "denotation"])
         for r in records:
             d = r["answer"]["denotation"]
-            writer.writerow([r["id"], r.get("category", ""), r["answer"]["aggregation"], r["question"], r.get("sql", ""), json.dumps(d) if isinstance(d, list) else d])
+            writer.writerow([r["id"], r.get("category", ""), r.get("source", ""), r["answer"]["aggregation"], r["question"], r.get("program", ""), json.dumps(d) if isinstance(d, list) else d])
     return out

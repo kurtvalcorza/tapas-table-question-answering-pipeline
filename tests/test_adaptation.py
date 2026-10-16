@@ -1,4 +1,4 @@
-"""Offline checks of the adaptation contract: the record contract and its refusals, the WikiSQL executor and
+"""Offline checks of the adaptation contract: the record contract and its refusals, the TAT-QA / FinQA conversion and
 draw, table-disjoint splitting, the BYOD loader, the metrics and baselines, `evaluate` through the injected
 runner, the artifact-manifest checks, and the model-free refusals of `adapt` / `save_artifact`."""
 # ruff: noqa: E501
@@ -13,8 +13,7 @@ import pytest
 from tapas_table_qa_pipeline import (
     AGGREGATIONS,
     ARTIFACT_FORMAT,
-    CORPUS_BYTES,
-    CORPUS_SHA256,
+    CORPORA,
     DEFAULT_CACHE_DIR,
     ENCODER_LAYERS,
     MODEL_ID,
@@ -23,19 +22,23 @@ from tapas_table_qa_pipeline import (
     SAMPLE_SPLIT,
     TAPASTableQAPipeline,
     build_sample_dataset,
+    check_group_disjoint,
     check_split_disjoint,
+    clean_cell,
     dataset_digest,
     denotation_metrics,
-    execute_sql,
     fetch_corpus,
+    finqa_candidates,
     first_cell_baseline,
     keyword_lookup_baseline,
     load_byod_dataset,
-    read_corpus,
+    sample_candidates,
+    samples,
     split_dataset,
     table_digest,
+    tatqa_candidates,
     validate_dataset,
-    wikisql_candidates,
+    value_correct,
     write_dataset_csv,
     write_dataset_jsonl,
 )
@@ -208,82 +211,152 @@ def test_byod_jsonl_and_json_round_trip(tmp_path):
     with pytest.raises(ValueError, match="record object"):
         load_byod_dataset(tmp_path / "bad.jsonl")
     csv_path = write_dataset_csv(records, tmp_path / "train.csv")
-    assert csv_path.read_text(encoding="utf-8").startswith("id,category,aggregation,question,sql,denotation")
+    assert csv_path.read_text(encoding="utf-8").startswith("id,category,source,aggregation,question,program,denotation")
 
 
-# --- WikiSQL executor and draw -----------------------------------------------------------------------------
+# --- TAT-QA / FinQA conversion and draw ----------------------------------------------------------------------
 
 
-def _wikisql_example(index, agg, sel, conds, header=("Name", "Score", "Team"), rows=None, table_id="t-1"):
-    rows = rows or [["A", "10", "X"], ["B", "20", "Y"], ["C", "30", "X"], ["D", "40", "Z"]]
+def _tatqa_context(t, answers=("20",), answer_type="span"):
     return {
-        "index": index,
-        "question": f"q{index}",
-        "table": {"id": table_id, "header": list(header), "rows": rows},
-        "sql": {"human_readable": "SELECT ...", "sel": sel, "agg": agg, "conds": conds},
+        "table": {"uid": f"tab-{t}", "table": [["", "2019", "2018"], [f"Revenue {t}", "$ 10", "20"], ["Cost", "( 5 )", "7"]]},
+        "questions": [{"uid": f"q-{t}", "question": f"What was revenue {t} in 2018?", "answer": list(answers), "answer_type": answer_type, "answer_from": "table"}],
     }
 
 
-def test_execute_sql_maps_every_wikisql_operator_into_the_pipeline_vocabulary():
-    conds_x = {"column_index": [2], "operator_index": [0], "condition": ["x"]}
-    assert execute_sql(_wikisql_example(0, 0, 0, conds_x)) == {"aggregation": "NONE", "coordinates": [[0, 0], [2, 0]], "denotation": ["A", "C"], "category": "lookup"}
-    assert execute_sql(_wikisql_example(1, 1, 1, conds_x)) == {"aggregation": "NONE", "coordinates": [[2, 1]], "denotation": ["30"], "category": "max"}
-    assert execute_sql(_wikisql_example(2, 2, 1, conds_x)) == {"aggregation": "NONE", "coordinates": [[0, 1]], "denotation": ["10"], "category": "min"}
-    assert execute_sql(_wikisql_example(3, 3, 0, conds_x)) == {"aggregation": "COUNT", "coordinates": [[0, 0], [2, 0]], "denotation": 2.0, "category": "count"}
-    assert execute_sql(_wikisql_example(4, 4, 1, conds_x)) == {"aggregation": "SUM", "coordinates": [[0, 1], [2, 1]], "denotation": 40.0, "category": "sum"}
-    assert execute_sql(_wikisql_example(5, 5, 1, conds_x)) == {"aggregation": "AVERAGE", "coordinates": [[0, 1], [2, 1]], "denotation": 20.0, "category": "average"}
-    greater = {"column_index": [1], "operator_index": [1], "condition": ["25"]}
-    assert execute_sql(_wikisql_example(6, 3, 0, greater))["denotation"] == 2.0
-    assert execute_sql(_wikisql_example(7, 0, 0, {"column_index": [2], "operator_index": [0], "condition": ["nowhere"]})) is None
-    assert execute_sql(_wikisql_example(8, 4, 0, conds_x)) is None  # SUM over names
+def _finqa_example(t, program, exe_ans, company="ACME", gold=("table_1", "table_2", "table_3"), answer=None):
+    # Vertical table: one year column; rows are line items (single-column golds are possible).
+    return {
+        "id": f"{company}/{2000 + t}/page_1.pdf-{t}",
+        "table": [["", "2009", "2008"], ["net revenue", "$ 1,000", "900"], ["costs", "( 100 )", "80"], ["other", "2,000", "70"], ["total", "2,900", "1,050"]],
+        "qa": {"question": f"q{t}", "program": program, "exe_ans": exe_ans, "answer": answer if answer is not None else str(exe_ans), "gold_inds": {k: "x" for k in gold}},
+    }
 
 
-def test_wikisql_candidates_filters_and_build_sample_dataset_draws_table_disjoint_strata():
-    conds_x = {"column_index": [2], "operator_index": [0], "condition": ["x"]}
-    examples = []
-    for t in range(40):
-        rows = [[f"A{t}", "10", "x"], [f"B{t}", "20", "y"], [f"C{t}", "30", "x"], [f"D{t}", "40", "z"]]
-        for agg in range(6):
-            examples.append(_wikisql_example(t * 6 + agg, agg, 1 if agg else 0, conds_x, rows=rows, table_id=f"t-{t}"))
-    big = _wikisql_example(999, 0, 0, conds_x, rows=[["A", "1", "x"]] * 30, table_id="t-big")
-    wide = _wikisql_example(998, 0, 0, conds_x, header=[f"c{i}" for i in range(13)], rows=[["x"] * 13], table_id="t-wide")
-    wide["sql"]["conds"] = {"column_index": [0], "operator_index": [0], "condition": ["x"]}
-    candidates = wikisql_candidates([*examples, big, wide])
-    assert len(candidates) == 240 and all(c["id"].startswith("wikisql-val-") for c in candidates)
-    splits = build_sample_dataset(candidates, seed=7, sizes={"train": 4, "validation": 1, "test": 2})
-    assert {k: len(v) for k, v in splits.items()} == {"train": 24, "validation": 6, "test": 12}
-    assert check_split_disjoint(splits)
-    for part in splits.values():
-        counts = {}
-        for r in part:
-            counts[r["category"]] = counts.get(r["category"], 0) + 1
-        assert len(set(counts.values())) == 1
+def test_clean_cell_rewrites_currency_and_negative_formats_only():
+    assert clean_cell("$ 1,234") == "1,234" and clean_cell("( 12 )") == "-12" and clean_cell("$ -23158 ( 23158 )") == "-23158"
+    assert clean_cell("12.5 %") == "12.5%" and clean_cell("( 4.5 % )") == "-4.5%" and clean_cell("net  revenue") == "net revenue"
+    assert pl.parse_number(clean_cell("$ 1,234")) == 1234.0 and clean_cell("19 % ( % )") == "19 % ( % )"
+
+
+def test_tatqa_candidates_keep_unique_table_spans_and_count_the_funnel():
+    stats = {}
+    out = tatqa_candidates([_tatqa_context(1), _tatqa_context(2, answers=("Cost",)), _tatqa_context(3, answers=("absent",)), _tatqa_context(4, answer_type="arithmetic")], stats)
+    assert [r["id"] for r in out] == ["tatqa-q-1", "tatqa-q-2"]
+    assert out[0]["answer"] == {"aggregation": "NONE", "coordinates": [[0, 2]], "denotation": ["20"]} and out[0]["table"]["2019"] == ["10", "-5"]
+    assert out[0]["table"]["item"] == ["Revenue 1", "Cost"] and out[0]["category"] == "lookup" and out[0]["source_group"] == "tatqa:tab-1"
+    assert stats == {"tatqa_table_span_questions": 3, "tatqa_after_table_filter": 3}
+
+
+def test_finqa_candidates_ground_terms_in_evidence_rows_one_column_and_source_rounding():
+    stats = {}
+    examples = [
+        _finqa_example(0, "add(1000, 2000)", 3000.0, answer="3000"),  # rows 1 and 3, column 2009: kept
+        _finqa_example(1, "add(1000, 900)", 1900.0),  # one row across two columns: single-column rule rejects it
+        _finqa_example(2, "add(1000, 2000), add(#0, -100), divide(#1, const_3)", 966.67),  # AVERAGE: dropped
+        _finqa_example(3, "table_sum(net revenue, none)", 1900.0),  # one-row programme: spans columns
+        _finqa_example(4, "add(1000, 2000)", 3000.0, gold=("table_1",)),  # 2,000 only outside the evidence rows
+        _finqa_example(5, "add(1000, 2000)", 3000.0, answer="3,004"),  # disagrees with the displayed answer
+        _finqa_example(6, "add(1000, 2000)", 3000.0, gold=("text_1",)),  # needs text
+        _finqa_example(7, "add(1000, 80)", 1080.0, answer="1.1 thousand"),  # columns differ; rejected before rounding
+        _finqa_example(8, "add(80, 70)", 150.4, answer="150.4"),  # rounding: 150 vs 150.4 exceeds half a unit
+        _finqa_example(9, "add(80, 70)", 150.0, answer="150"),  # kept
+    ]
+    out = finqa_candidates(examples, stats)
+    assert [r["id"] for r in out] == ["finqa-ACME:2000:page_1.pdf-0", "finqa-ACME:2009:page_1.pdf-9"]
+    assert out[0]["answer"] == {"aggregation": "SUM", "coordinates": [[0, 1], [2, 1]], "denotation": 3000.0}
+    assert out[1]["answer"]["coordinates"] == [[1, 2], [2, 2]] and out[1]["source_answer"] == "150" and out[1]["conversion_discrepancy"] == 0.0
+    assert out[0]["evidence_rows"] == [0, 1, 2] and out[0]["source_group"] == "finqa:ACME/2000"
+    assert stats["finqa_dropped_average"] == 1 and stats["finqa_removed_by_evidence_rows"] == 1
+    assert stats["finqa_rejected_multi_column"] == 3 and stats["finqa_rejected_source_disagrees"] == 2
+    assert all(len({c for _, c in r["answer"]["coordinates"]}) == 1 for r in out)
+
+
+def test_source_reference_tolerance_is_half_a_unit_of_the_displayed_answer():
+    assert samples._source_reference("704", 704.0) == (704.0, pytest.approx(0.5))
+    assert samples._source_reference("12.5%", 12.4999) == (12.5, pytest.approx(0.05))
+    assert samples._source_reference("$ 1,234.56 million", 0) == (1234.56, pytest.approx(0.005))
+    value, tol = samples._source_reference("", 3.0)
+    assert value == 3.0 and tol < 1e-6
+
+
+def test_validate_dataset_refuses_gold_cells_in_several_columns():
+    table = {"name": ["a", "b"], "x": ["1", "2"], "y": ["3", "4"]}
+    record = {"id": "r0", "table": table, "question": "q", "answer": {"aggregation": "SUM", "coordinates": [[0, 1], [0, 2]], "denotation": 4.0}}
+    with pytest.raises(ValueError, match="span 2 columns .*select_one_column"):
+        validate_dataset([record], min_records=1)
+
+
+def test_check_group_disjoint_flags_a_group_in_two_splits():
+    a = {"source_group": "finqa:A/2001"}
+    assert check_group_disjoint({"train": [a], "test": [{"source_group": "finqa:B/2001"}, {}]}) == {"train": 1, "test": 1}
+    with pytest.raises(ValueError, match="appears in both"):
+        check_group_disjoint({"train": [a], "test": [a]})
+
+
+def test_build_sample_dataset_keeps_groups_disjoint_and_draws_per_category():
+    contexts = [_tatqa_context(t) for t in range(40)]
+    finqa = [_finqa_example(t, "add(1000, 2000)", 3000.0, company=f"C{t}") for t in range(40)]
+    for i, ex in enumerate(finqa):
+        ex["table"][1][0] = f"net revenue {i}"
+    candidates = tatqa_candidates(contexts) + finqa_candidates(finqa)
+    sizes = {"train": {"lookup": 8, "sum": 6}, "validation": 2, "test": 3}
+    splits = build_sample_dataset(candidates, seed=7, sizes=sizes)
+    assert {k: len(v) for k, v in splits.items()} == {"train": 14, "validation": 4, "test": 6}
+    assert check_split_disjoint(splits) and check_group_disjoint(splits)
+    assert {r["category"] for part in splits.values() for r in part} == {"lookup", "sum"}
     with pytest.raises(ValueError, match="candidates, need"):
-        build_sample_dataset(candidates, sizes={"train": 60, "validation": 1, "test": 1})
-    assert build_sample_dataset(candidates, seed=7, sizes={"train": 4, "validation": 1, "test": 2}) == splits
+        build_sample_dataset(candidates, sizes={"train": {"lookup": 60}, "validation": 1, "test": 1})
+    assert build_sample_dataset(candidates, seed=7, sizes=sizes) == splits
 
 
-def test_fetch_corpus_refuses_a_shard_that_does_not_match_the_pins(tmp_path):
+def test_fetch_corpus_refuses_a_file_that_does_not_match_the_pins(tmp_path):
     with pytest.raises(ValueError, match="bytes, pinned"):
-        fetch_corpus(cache_dir=tmp_path, fetcher=lambda url: b"not-a-shard")
-    fake = b"x" * CORPUS_BYTES
-    assert hashlib.sha256(fake).hexdigest() != CORPUS_SHA256
+        fetch_corpus("tatqa-train", cache_dir=tmp_path, fetcher=lambda url: b"not-a-file")
+    fake = b"x" * CORPORA["tatqa-train"]["bytes"]
+    assert hashlib.sha256(fake).hexdigest() != CORPORA["tatqa-train"]["sha256"]
     with pytest.raises(ValueError, match="sha256"):
-        fetch_corpus(cache_dir=tmp_path, fetcher=lambda url: fake)
-    assert not (tmp_path / "wikisql-validation.parquet").exists()
+        fetch_corpus("tatqa-train", cache_dir=tmp_path, fetcher=lambda url: fake)
+    assert not (tmp_path / "tatqa-train.json").exists()
+    assert all(spec["url"].startswith("https://") and spec["revision"] in spec["url"] for spec in CORPORA.values())
 
 
-def test_default_draw_matches_the_pinned_digest_when_the_shard_is_cached():
-    cached = REPO_ROOT / DEFAULT_CACHE_DIR / "wikisql-validation.parquet"
-    if not cached.is_file():
-        pytest.skip("WikiSQL shard not cached")
-    splits = build_sample_dataset(wikisql_candidates(read_corpus(fetch_corpus(cache_dir=cached.parent))))
-    assert {k: len(v) for k, v in splits.items()} == {k: (sum(v.values()) if isinstance(v, dict) else v * 6) for k, v in SAMPLE_SPLIT.items()}
+def test_default_draw_matches_the_pinned_digest_when_the_files_are_cached():
+    cache = REPO_ROOT / DEFAULT_CACHE_DIR
+    if not all((cache / f"{key}.json").is_file() for key in CORPORA):
+        pytest.skip("TAT-QA / FinQA files not cached")
+    splits = build_sample_dataset(sample_candidates({key: fetch_corpus(key, cache_dir=cache) for key in CORPORA}))
+    assert {k: len(v) for k, v in splits.items()} == {k: (sum(v.values()) if isinstance(v, dict) else v * 3) for k, v in SAMPLE_SPLIT.items()}
     assert check_split_disjoint(splits)
     assert dataset_digest([r for part in splits.values() for r in part]) == SAMPLE_DIGEST
 
 
 # --- metrics, baselines, evaluate ----------------------------------------------------------------------------
+
+
+def test_cell_accuracy_compares_coordinate_sets_and_strict_none_follows_value_equality():
+    table = {"name": ["a", "b"], "n": ["5", "7"]}
+    rec = {"id": "x", "table": table, "question": "q", "answer": {"aggregation": "NONE", "coordinates": [[0, 1]], "denotation": ["5"]}}
+    dup = {"cells": ["5", "5"], "coordinates": [[0, 1], [0, 1]], "aggregation": "NONE", "numeric_answer": None}
+    assert denotation_metrics([dup], [rec])["cell_accuracy"] == 1.0  # a set: duplicates ignored
+    numeric = {"cells": ["5.0"], "coordinates": [[1, 1]], "aggregation": "NONE", "numeric_answer": None}
+    m = denotation_metrics([numeric], [rec])
+    assert m["value_accuracy"] == 1.0 and m["strict_accuracy"] == 1.0 and m["cell_accuracy"] == 0.0
+
+
+def test_value_and_strict_rules_score_the_final_answer():
+    # Kurt's TQA-M1 ruling: value-equality regardless of operator; strict-operator separate.
+    assert value_correct({"cells": ["5"], "aggregation": "NONE", "numeric_answer": None}, 5.0)  # NONE lookup equal to a SUM gold
+    assert value_correct({"cells": ["5"], "aggregation": "SUM", "numeric_answer": 5.0}, ["5"])  # operator over the one gold cell
+    assert not value_correct({"cells": ["Smith"], "aggregation": "COUNT", "numeric_answer": 1.0}, ["Smith"])
+    assert not value_correct({"cells": ["5", "7"], "aggregation": "SUM", "numeric_answer": 12.0}, ["5", "7"])
+    assert value_correct({"cells": ["Smith"], "aggregation": "NONE", "numeric_answer": None}, ["smith"])
+    assert not value_correct({"cells": ["5", "7"], "aggregation": "AVERAGE", "numeric_answer": None}, 6.0)
+    table = {"name": ["a", "b"], "n": ["5", "7"]}
+    rec = {"id": "x", "table": table, "question": "q", "answer": {"aggregation": "SUM", "coordinates": [[0, 1]], "denotation": 5.0}, "category": "sum"}
+    m = denotation_metrics([{"cells": ["5"], "coordinates": [[0, 1]], "aggregation": "NONE", "numeric_answer": None}], [rec])
+    assert m["value_accuracy"] == 1.0 and m["strict_accuracy"] == 0.0 and m["aggregation_accuracy"] == 0.0 and m["cell_accuracy"] == 1.0
+    assert "accuracy" not in m and set(m["definitions"]) == {"value_accuracy", "strict_accuracy", "aggregation_accuracy", "cell_accuracy"}
 
 
 def test_denotation_metrics_scores_denotation_operator_and_cells_per_category():
@@ -296,13 +369,14 @@ def test_denotation_metrics_scores_denotation_operator_and_cells_per_category():
         value, _ = pl.compute_numeric_answer(cells, answer["aggregation"])
         results.append({"cells": cells, "coordinates": answer["coordinates"], "aggregation": answer["aggregation"], "numeric_answer": value})
     perfect = denotation_metrics(results, records)
-    assert perfect["accuracy"] == 1.0 and perfect["aggregation_accuracy"] == 1.0 and perfect["cell_accuracy"] == 1.0
+    assert perfect["value_accuracy"] == 1.0 and perfect["strict_accuracy"] == 1.0 and perfect["aggregation_accuracy"] == 1.0 and perfect["cell_accuracy"] == 1.0
     assert set(perfect["per_category"]) == {"average", "count", "lookup", "sum"}
     assert set(perfect["per_aggregation"]) <= set(AGGREGATIONS)
     results[0] = {"cells": ["Cebu"], "coordinates": [[1, 0]], "aggregation": "NONE", "numeric_answer": None}
     partial = denotation_metrics(results, records)
-    assert partial["accuracy"] == pytest.approx(11 / 12) and partial["per_category"]["lookup"]["accuracy"] == pytest.approx(2 / 3)
-    assert partial["predictions"][0]["match"] is False and partial["predictions"][0]["cell_match"] is False
+    assert partial["value_accuracy"] == pytest.approx(11 / 12) and partial["per_category"]["lookup"]["value_accuracy"] == pytest.approx(2 / 3)
+    assert partial["strict_accuracy"] == pytest.approx(11 / 12)
+    assert partial["predictions"][0]["value_match"] is False and partial["predictions"][0]["cell_match"] is False
     with pytest.raises(ValueError, match="same length"):
         denotation_metrics(results[:3], records)
 
@@ -310,10 +384,10 @@ def test_denotation_metrics_scores_denotation_operator_and_cells_per_category():
 def test_baselines_answer_through_the_result_shape():
     records = _records()
     floor = first_cell_baseline(records)
-    assert 0.0 <= floor["accuracy"] <= 1.0 and floor["baseline"].startswith("first cell")
+    assert 0.0 <= floor["value_accuracy"] <= 1.0 and floor["baseline"].startswith("first cell")
     records[0]["question"] = "Which Region is Cebu in?"
     keyword = keyword_lookup_baseline(records)
-    assert keyword["predictions"][0]["match"] is True
+    assert keyword["predictions"][0]["value_match"] is True
     records[1]["question"] = "How many cities are in the table?"
     assert keyword_lookup_baseline(records)["predictions"][1]["aggregation"] == "COUNT"
 
@@ -323,7 +397,7 @@ def test_evaluate_runs_every_record_through_answer_and_scores_it():
     pipe = TAPASTableQAPipeline(runner, "cpu", "injected")
     result = pipe.evaluate(_records())
     assert runner.calls == 12 and result["n"] == 12 and result["adapted"] is False
-    assert result["per_category"]["lookup"]["accuracy"] == 1.0 and result["verdict"] == "measured-small-sample"
+    assert result["per_category"]["lookup"]["value_accuracy"] == 1.0 and result["verdict"] == "measured-small-sample"
     assert result["truncated"] == 0 and "definitions" in result
     with pytest.raises(ValueError):
         pipe.evaluate([{"id": "x"}] * 8)

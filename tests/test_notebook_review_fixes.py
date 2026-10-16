@@ -201,14 +201,14 @@ def test_tpq_m3_no_quality_assert_remains(notebook):
     assert asserts == ["assert parity['identical_answers'] == parity['of']"]
 
 
-CATS = ("average", "count", "lookup", "max", "min", "sum")
+CATS = ("average", "lookup", "sum")
 
 
 def _scores(acc, agg, cells=0.8, per=None):
     per = per or {}
     return {
-        "accuracy": acc, "aggregation_accuracy": agg, "cell_accuracy": cells, "n": 150, "verdict": "measured", "truncated": 0, "definitions": {},
-        "per_category": {c: {"n": 25, "accuracy": acc, "aggregation_accuracy": per.get(c, agg), "cell_accuracy": cells} for c in CATS},
+        "value_accuracy": acc, "strict_accuracy": acc, "aggregation_accuracy": agg, "cell_accuracy": cells, "n": 105, "verdict": "measured", "truncated": 0, "definitions": {},
+        "per_category": {c: {"n": 35, "value_accuracy": acc, "strict_accuracy": acc, "aggregation_accuracy": per.get(c, agg), "cell_accuracy": cells} for c in CATS},
         "baseline": "stand-in",
     }
 
@@ -231,11 +231,12 @@ def test_tpq_m3_negative_results_are_recorded_and_do_not_stop_the_notebook(noteb
         "disjoint": {}, "adapt_result": {"history": [], "trainable_names": []}, "adapt_seconds": 0.0,
     }
     exec(_cell(notebook, "baseline_first = first_cell_baseline("), ns)
-    assert ns["frozen_verdict"]["accuracy"] == "a baseline ties or beats the frozen model"
+    assert ns["frozen_verdict"]["value_accuracy"] == "a baseline ties or beats the frozen model"
     exec(_cell(notebook, "adapted_test = pipe.evaluate(test_records)"), ns)
     comparison = json.loads((tmp_path / "outputs" / f"{STEM}_evaluation_report.json").read_text(encoding="utf-8"))["comparison"]
     assert comparison["verdicts"]["adapted_vs_frozen_aggregation_accuracy"] == "no gain"
-    assert comparison["verdicts"]["adapted_vs_frozen_accuracy"] == "worse"
+    assert comparison["verdicts"]["adapted_vs_frozen_value_accuracy"] == "worse"
+    assert comparison["verdicts"]["adapted_vs_frozen_strict_accuracy"] == "worse"
     assert comparison["operator_regressions"] == ["sum"]
 
 
@@ -243,12 +244,12 @@ def test_tpq_m3_negative_results_are_recorded_and_do_not_stop_the_notebook(noteb
 
 
 def test_tpq_m4_prose_names_its_runs_and_discusses_the_sum_regression(notebook):
+    # Superseded by the 2026-10-15 review (TQA-m1, REL13): no unlabelled run quotes; earlier-revision numbers name their blob.
     markdown = _markdown(notebook)
-    for stale in ("with the lookups untouched", "lookups stayed at 0.92", "`average`, `min` and `sum` each gained one question", "the operator choice is what these questions teach"):
+    for stale in ("with the lookups untouched", "lookups stayed at 0.92", "Kaggle T4 release run", "0.82 → 0.84", "more capacity let the model"):
         assert stale not in markdown, stale
-    assert "Kaggle T4 release run" in markdown and "build record" in markdown
-    assert "0.88 to 0.56" in markdown and "0.82 → 0.813" in markdown
-    assert "unlearned" in markdown
+    assert "0.88 to 0.56" in markdown and "`f8e0d361`" in markdown and "not re-run here" in markdown
+    assert "unlearned" in markdown and "COUNT and AVERAGE are not exercised in this revision" in markdown
 
 
 # --- TPQ-M5: guided layer and infrastructure labelling ----------------------------------------------------------
@@ -325,7 +326,8 @@ def _section_4_namespace(restored: list) -> dict:
     ns = {}
     for module in (pl, mt, sm):
         ns.update({k: getattr(module, k) for k in dir(module) if not k.startswith("__")})
-    pipe = types.SimpleNamespace(adapter={"best_epoch": 2}, restore_base=lambda: restored.append(True) or ["a"])
+    pipe = types.SimpleNamespace(adapter={"best_epoch": 2}, restore_base=lambda: restored.append(True) or ["a"],
+                                 token_report=lambda records: {"n": len(records), "max_tokens": 100, "max_allowed": 512, "truncated": []})
     ns.update({"os": __import__("os"), "Path": Path, "pipe": pipe, "__name__": "__main__"})
     return ns
 
@@ -346,9 +348,10 @@ def test_tpq_m1_byod_path_runs_section_4_outside_colab_from_the_base(notebook, t
 def test_tpq_m1_upload_outside_colab_cancelled_and_bad_path_are_explained(notebook, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setitem(sys.modules, "google", None)
-    with pytest.raises(RuntimeError, match="upload dialog exists only in Google Colab"):
+    # TQA-m5 (DAT20): refusals are one ByodRefusal message (a ValueError rendered without a traceback).
+    with pytest.raises(ValueError, match="BYOD refused: USE_BYOD is True .*upload dialog exists only in Google Colab"):
         exec(_section_4(notebook, ""), _section_4_namespace([]))
-    with pytest.raises(FileNotFoundError, match="BYOD_PATH 'nowhere.jsonl' is not a file"):
+    with pytest.raises(ValueError, match="BYOD refused: BYOD_PATH 'nowhere.jsonl' is not a file"):
         exec(_section_4(notebook, "nowhere.jsonl"), _section_4_namespace([]))
     for uploaded, message in (({}, "received 0"), ({"a.jsonl": b"", "b.jsonl": b""}, "received 2")):
         google, colab, files = (types.ModuleType(n) for n in ("google", "google.colab", "google.colab.files"))
@@ -360,5 +363,19 @@ def test_tpq_m1_upload_outside_colab_cancelled_and_bad_path_are_explained(notebo
             exec(_section_4(notebook, ""), _section_4_namespace([]))
 
 
-def test_tpq_s4_notebook_declares_spec_2_2(notebook):
-    assert notebook["metadata"]["dimer"]["notebook_spec"] == "2.2"
+def test_tpq_s4_notebook_declares_spec_2_5_and_kind(notebook):
+    assert notebook["metadata"]["dimer"]["notebook_spec"] == "2.5"
+    assert notebook["metadata"]["dimer"]["notebook_kind"] == "TUTORIAL"
+
+
+def test_tqa_m5_byod_refusal_removes_stale_outputs_and_renders_one_line(notebook, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "outputs").mkdir()
+    (tmp_path / "outputs" / f"{STEM}_evaluation_report.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "bad.jsonl").write_text('{"id": "a"}\n{broken\n', encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        exec(_section_4(notebook, "bad.jsonl"), _section_4_namespace([]))
+    message = str(caught.value)
+    assert message.startswith("BYOD refused: bad.jsonl line 2: not valid JSON") and "Fix the file and run this cell again." in message
+    assert "Removed 1 earlier output(s)" in message and not list((tmp_path / "outputs").iterdir())
+    assert caught.value._render_traceback_() == [message] and caught.value.dimer_refusal is True
