@@ -23,12 +23,12 @@ CI runs `tools/validate_release_assets.py`, which checks:
   restart-on-stale-import guard; `NOTEBOOK_SOURCE` recorded in exports;
 - `MODEL_ID`/`MODEL_REVISION` bound only in the carried module cell (and repeated in the inline manifest, which the
   notebook asserts against the module before fetching), the revision a 40-hex immutable commit, and the same
-  identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions (the pinned WikiSQL
-  parquet revision is the one other 40-hex string allowed);
+  identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions (the pinned TAT-QA dataset revision and FinQA commit,
+  and the previous default's WikiSQL parquet revision, are the other 40-hex strings allowed);
 - the profile-specific public-API calls (`stage_missing_files`, `verify_snapshot`,
-  `TAPASTableQAPipeline.from_pretrained(weights_dir=...)`, `fetch_corpus` from the pinned cache path, `read_corpus`,
-  `wikisql_candidates`, `build_sample_dataset(candidates, seed=SPLIT_SEED)` / `load_byod_dataset` + `split_dataset`,
-  `validate_dataset` per split, `check_split_disjoint`, `write_dataset_jsonl`, the four dataset refusal probes, the
+  `TAPASTableQAPipeline.from_pretrained(weights_dir=...)`, `fetch_corpus` per pinned file from the cache path, `sample_candidates`,
+  `build_sample_dataset(candidates, seed=SPLIT_SEED)` / `load_byod_dataset` + `split_dataset`,
+  `validate_dataset` per split, `check_split_disjoint`, `check_group_disjoint`, `pipe.token_report`, `write_dataset_jsonl`, the four dataset refusal probes, the
   ceiling print, `validate_inputs` with the numeric-cell refusal probe, `answer` with the sanity checks and the
   per-grid `evaluation_report` on the city table, `first_cell_baseline`, `keyword_lookup_baseline`, `pipe.evaluate`
   on the frozen model with the baseline assertion, `pipe.adapt` with its explicit hyperparameters, `pipe.evaluate` on
@@ -71,9 +71,9 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 1. resolve the exact PR/commit head under review and confirm static CI is green;
 2. open that exact notebook revision in a new CPU or CUDA runtime (Colab, or a fresh-container executor above) with
    **no repository checkout**, an empty Hugging Face cache, and no pre-staged files under the working-directory
-   snapshot `weights/tapas-large-wtq/` or the shard cache `weights/wikisql/` (the standalone path writes the
-   manifest itself, stages the missing files from the Hub and fetches the pinned shard, so neither directory may be
-   seeded);
+   snapshot `weights/tapas-large-wtq/` or the data cache `weights/table-qa-corpora/` (the standalone path writes the
+   manifest itself, stages the missing files from the Hub and fetches the pinned TAT-QA and FinQA files, so neither
+   directory may be seeded);
 3. run the notebook top-to-bottom without editing implementation cells (form parameters at their defaults:
    `USE_BYOD = False`, `SPLIT_SEED = 42`, `EPOCHS = 4`, `LEARNING_RATE = 5e-5`, `BATCH_SIZE = 8`,
    `TRAINABLE_LAYERS = 2`);
@@ -86,8 +86,8 @@ Before changing the registry status from `Candidate` to `Release-grade`:
    - pinned runtime installed from the inline `PINS` with no GitHub access;
    - the three carried module cells execute (defining `TAPASTableQAPipeline`, `verify_snapshot`,
      `stage_missing_files`, `validate_inputs`, `evaluation_report`, `denotation_accuracy`, `denotation_metrics`,
-     `first_cell_baseline`, `keyword_lookup_baseline`, `fetch_corpus`, `read_corpus`, `execute_sql`,
-     `wikisql_candidates`, `build_sample_dataset`, `validate_dataset`, `check_split_disjoint`, `split_dataset`,
+     `first_cell_baseline`, `keyword_lookup_baseline`, `fetch_corpus`, `sample_candidates`,
+     `tatqa_candidates`, `finqa_candidates`, `build_sample_dataset`, `validate_dataset`, `check_split_disjoint`, `split_dataset`,
      `load_byod_dataset`, `write_dataset_jsonl` and the ceilings) with no import of the repository package;
    - the inline manifest asserted against the module's constants, then `stage_missing_files(WEIGHTS_DIR,
      allow_download=True)` reporting all 6 manifest entries fetched from `google/tapas-large-finetuned-wtq` at the
@@ -158,13 +158,15 @@ runtime, not general estimates.
 
 **Candidate** — verification pending: the current revision (TAT-QA lookups + FinQA sums) — blob `d2354b18` at commit `88c6b09` completed one pass with no restart and 0 errors on a fresh Colab Tesla T4 on 2026-10-16 (Colab CLI 0.7.4 sequential execution, 13/13 code cells, 220.7 s; on the 60 test questions value-equality / strict-operator accuracy frozen 0.35 / 0.217, adapted 0.267 / 0.25, `operator_regressions` [`sum`], reload parity 8/8 — a mixed result, not an improvement); status stays Candidate until a reviewer/integrator accepts that record. Earlier records, for the previous WikiSQL revisions and not evidence for the current notebook: the 2026-09-20 Kaggle T4 run of blob `6ed641ea` PASSED only after a manual restart following the in-kernel install cell, so under NOTEBOOK_SPEC 2.2 (RUN10, REL2) it is not promotion evidence; the regenerated notebook (isolated uv environment, no restart) — blob `f8e0d361` at commit `1f8ba58` — completed one pass with no restart and 0 errors on a fresh Colab Tesla T4 on 2026-10-10 (Colab CLI 0.7.4 sequential execution, 13/13 code cells, 458.9 s; frozen accuracy / aggregation / cell 0.82 / 0.567 / 0.82, adapted 0.813 / 0.807 / 0.833, reload parity 8/8, the same figures as the Kaggle T4 run). History: the `E2E` notebook blob `6ed641ea` (committed at `1b74941`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-20 (11/11 ok (1 restart after install cell), 534.6 s, 15 files, 1351 MB fetched from the Hub and digest-verified inside the notebook) with no repository checkout; it was taken as the REL1/REL10 evidence before the 2026-10-05 review. The local pre-flight rows above are what preceded it and remain history. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
 
-Facts a reviewer should still weigh: the frozen WTQ checkpoint is already a strong lookup model on WikiSQL tables
-(denotation 0.82, lookups 0.92 in the build record), so the adaptation gain is the operator choice (aggregation
-accuracy 0.567 → 0.807) with denotation accuracy moving by three questions of 150 (0.82 → 0.84), which is why the
-notebook asserts aggregation accuracy and only reports denotation accuracy; the 90-question validation split moves
-each measure in steps of one question, which is why the epoch is selected on the mean of the three; the build
-record's other configurations — four trainable blocks, or a training draw with as many operator questions as
-lookups — raised aggregation accuracy as much while costing lookups (0.92 → 0.84), and on one draw denotation
-accuracy did not move at all; supervision for operator questions is the number only (no cell labels), because
-labelling their cells too let the model's aggregate mask re-route them to cell selection; and the city table
-re-answered after adaptation is three questions of evidence about behaviour outside the corpus, not a measurement. The T4 run itself is the third data point on the denotation figure: aggregation accuracy 0.567 → 0.807 and cell accuracy 0.82 → 0.833 as on the local runs, denotation accuracy 0.82 → 0.813 (one question lost: lookups 0.92 → 0.88 and `max` 0.80 → 0.76 against `average` 0.88 → 0.92) — the CPU pre-flight held it flat and the RTX 5070 Ti run gained three, so the honest reading of this adaptation is a robust operator gain with denotation accuracy within a few questions either way.
+Facts a reviewer should still weigh (current TAT-QA + FinQA revision): the pinned WTQ head selects cells from one
+column (`select_one_column: true`), so every gold in the sample lies in one column and FinQA's averages (one row
+across year columns) were dropped — COUNT and AVERAGE are not exercised; question type and source are confounded
+(every lookup is TAT-QA, every sum is FinQA), so per-type differences also reflect the two datasets; the split is
+FinQA-report-disjoint and TAT-QA-table-disjoint, with cross-source report overlap not checked; the conversion is a
+necessary condition for answerability, not proof (report text, units and scale are dropped; the 114 accepted FinQA
+sums are listed in the fix cycle's audit file); the 36-question validation split moves each measure in steps of about
+three points, and the epoch is selected on the mean of value-equality, aggregation and cell accuracy on validation
+only; supervision for sums is the number only (no cell labels), as the checkpoint was trained; reload parity is a
+serialisation check, not evidence of task performance; and the city table re-answered after adaptation is three
+questions of evidence about behaviour outside the corpus, not a measurement. The previous WikiSQL revision's figures
+stay in the dated rows above and do not describe the current notebook.
