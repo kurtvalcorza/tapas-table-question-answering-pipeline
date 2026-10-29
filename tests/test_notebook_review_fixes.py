@@ -349,11 +349,11 @@ def test_tpq_m1_upload_outside_colab_cancelled_and_bad_path_are_explained(notebo
     monkeypatch.chdir(tmp_path)
     monkeypatch.setitem(sys.modules, "google", None)
     # TQA-m5 (DAT20): refusals are one ByodRefusal message (a ValueError rendered without a traceback).
-    with pytest.raises(ValueError, match="BYOD refused: USE_BYOD is True .*upload dialog exists only in Google Colab"):
+    with pytest.raises(ValueError, match=r"^Refused: \(no file\): USE_BYOD is True .*upload dialog exists only in Google Colab"):
         exec(_section_4(notebook, ""), _section_4_namespace([]))
-    with pytest.raises(ValueError, match="BYOD refused: BYOD_PATH 'nowhere.jsonl' is not a file"):
+    with pytest.raises(ValueError, match="^Refused: nowhere.jsonl: BYOD_PATH is not a file"):
         exec(_section_4(notebook, "nowhere.jsonl"), _section_4_namespace([]))
-    for uploaded, message in (({}, "received 0"), ({"a.jsonl": b"", "b.jsonl": b""}, "received 2")):
+    for uploaded, message in (({}, r"^Refused: \(no file\): upload exactly one JSONL file \(received 0"), ({"a.jsonl": b"", "b.jsonl": b""}, r"^Refused: a.jsonl, b.jsonl: upload exactly one JSONL file \(received 2")):
         google, colab, files = (types.ModuleType(n) for n in ("google", "google.colab", "google.colab.files"))
         files.upload = lambda uploaded=uploaded: uploaded
         colab.files, google.colab = files, colab
@@ -376,6 +376,6 @@ def test_tqa_m5_byod_refusal_removes_stale_outputs_and_renders_one_line(notebook
     with pytest.raises(ValueError) as caught:
         exec(_section_4(notebook, "bad.jsonl"), _section_4_namespace([]))
     message = str(caught.value)
-    assert message.startswith("BYOD refused: bad.jsonl line 2: not valid JSON") and "Fix the file and run this cell again." in message
+    assert message.startswith("Refused: bad.jsonl: line 2: not valid JSON") and "Fix the file and run this cell again." in message
     assert "Removed 1 earlier output(s)" in message and not list((tmp_path / "outputs").iterdir())
     assert caught.value._render_traceback_() == [message] and caught.value.dimer_refusal is True
