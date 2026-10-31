@@ -1,0 +1,95 @@
+[colab] Parsing notebook '<local-run-dir>/tapas_table_qa_colab_a5a73d1_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/13 - Infrastructure: build (or reuse) the isolated environment and route later cells to it...
+{'isolated_environment': '/content/dimer_isolated_env_ec639047a736', 'reused': False, 'isolated_python': '3.12.12', 'kernel_python': '3.13.16', 'locked_packages': 51, 'setup_seconds': 56}
+{'routed_to': '/content/dimer_isolated_env_ec639047a736/bin/python', 'worker_pid': 1696, 'worker_reused': False}
+[colab] Executing cell 2/13 - Infrastructure: record the runtime...
+{'notebook_source': {'repository': 'tapas-table-question-answering-pipeline', 'repository_revision': 'd1041890e21280dab43c51bfb6b40b37b42d9f2e', 'embedded_module': 'src/tapas_table_qa_pipeline/pipeline.py', 'embedded_modules': ['src/tapas_table_qa_pipeline/pipeline.py', 'src/tapas_table_qa_pipeline/metrics.py', 'src/tapas_table_qa_pipeline/samples.py'], 'module_sha256': '1f9c2e41c9210c59b3220c609abef23d1d2a8430b1cd18afcece5a80b896e711', 'generator': 'build_notebook.py/2.2', 'notebook_spec': '2.5'}, 'python': '3.12.12', 'executable': '/content/dimer_isolated_env_ec639047a736/bin/python', 'torch': '2.14.0+cu130', 'transformers': '4.57.6', 'pandas': '3.0.5', 'cuda': True}
+[colab] Executing cell 3/13 - tapas_table_qa-11...
+[colab] Executing cell 4/13 - tapas_table_qa-13...
+[colab] Executing cell 5/13 - tapas_table_qa-15...
+[colab] Executing cell 6/13 - Infrastructure: stage and digest-verify the pinned snapshot, then load the model...
+{'model_id': 'google/tapas-large-finetuned-wtq', 'revision': 'f58317ab2577d17647d9acafa790c744a0388b30', 'license': 'apache-2.0', 'files': 6, 'total_bytes': 1347256837}
+{'weights_dir': '/content/weights/tapas-large-wtq', 'fetched': ['README.md', 'config.json', 'model.safetensors', 'special_tokens_map.json', 'tokenizer_config.json', 'vocab.txt']}
+{'verified_files': 6, 'revision': 'f58317ab2577d17647d9acafa790c744a0388b30'}
+{'device': 'cuda:0', 'source': 'local-snapshot'}
+[colab] Executing cell 7/13 - tapas_table_qa-19...
+Truncation was not explicitly activated but `max_length` is provided a specific value, please use `truncation=True` to explicitly truncate examples to max length. Defaulting to 'longest_first' truncation strategy. If you encode pairs of sequences (GLUE-style) with the tokenizer you can select this strategy more precisely by providing a specific strategy to `truncation`.
+{'token_check': {'n': 226, 'max_tokens': 380, 'max_allowed': 512}, 'truncated': 0}
+{'data_source': 'TAT-QA lookups + FinQA sums (financial-report tables) — TAT-QA: CC BY 4.0; FinQA: MIT (GitHub), CC BY 4.0 on its Hub card — attribution kept for both', 'raw_rows': {'file_bytes': {'finqa-train': 78216616, 'finqa-dev': 10954658, 'finqa-test': 14395143, 'tatqa-train': 12827783}, 'filter_funnel': {'tatqa_table_span_questions': 2055, 'tatqa_after_table_filter': 1965, 'tatqa_rejected_multi_column': 263, 'finqa_max_discrepancy': 0.0, 'finqa_table_only_sum_average_programmes': 501, 'finqa_dropped_average': 197, 'finqa_after_table_filter': 263, 'finqa_rejected_multi_column': 97, 'finqa_rejected_unmatched': 76, 'finqa_rejected_source_disagrees': 11, 'finqa_removed_by_evidence_rows': 1, 'tatqa_after_gold_cell_match': 981, 'finqa_after_gold_cell_match': 114}, 'candidates': {'lookup': {'questions': 981, 'groups': 696, 'source': 'tatqa'}, 'sum': {'questions': 114, 'groups': 89, 'source': 'finqa'}}}, 'splits': {'train': 130, 'validation': 36, 'test': 60}, 'groups_per_split': {'train': 119, 'validation': 31, 'test': 53}}
+{'train': {'n': 130, 'tables': 122, 'categories': {'lookup': 80, 'sum': 50}, 'aggregations': {'NONE': 80, 'SUM': 50}, 'table_shape': {'rows': [2, 18], 'columns': [2, 8]}, 'digest': '9d6c7a518f1a5eec...'}}
+{'validation': {'n': 36, 'tables': 33, 'categories': {'lookup': 18, 'sum': 18}, 'aggregations': {'NONE': 18, 'SUM': 18}, 'table_shape': {'rows': [3, 17], 'columns': [2, 8]}, 'digest': '5846f68e70015770...'}}
+{'test': {'n': 60, 'tables': 56, 'categories': {'lookup': 30, 'sum': 30}, 'aggregations': {'NONE': 30, 'SUM': 30}, 'table_shape': {'rows': [2, 19], 'columns': [2, 8]}, 'digest': '5edebdcc3ce8af20...'}}
+--- lookup example tatqa-0f254aae57341863c25e081bbabcc50d ---
+item           | ASSUMPTIONS USED       | column 3     
+GROUPS OF CGUs | PERPETUITY GROWTH RATE | DISCOUNT RATE
+Bell Wireless  | 0.8%                   | 9.1%         
+Bell Wireline  | 1.0%                   | 6.0%         
+Bell Media     | 1.0%                   | 8.0%         
+{'question': 'What is the percentage for Bell Wireless when discount rate assumption is used?', 'gold': {'aggregation': 'NONE', 'coordinates': [[1, 2]], 'denotation': ['9.1%']}, 'source_answer': None, 'program': None}
+--- sum example finqa-HIG:2011:page_188.pdf-3 ---
+item                         | 2011  | 2010  | 2009 
+balance january 1            | 9857  | 10686 | 13248
+deferred costs               | 2608  | 2648  | 2853 
+amortization 2014 dac        | -2920 | -2665 | -3247
+amortization 2014 dac from d | 2014  | -17   | -10  
+amortization 2014 unlock ben | -507  | 138   | -1010
+adjustments to unrealized ga | -377  | -1159 | -1031
+effect of currency translati | 83    | 215   | -39  
+cumulative effect of account | 2014  | 11    | -78  
+balance december 31          | 8744  | 9857  | 10686
+{'question': 'what is the change in dac balance resulting from all amortization accounts in 2011?', 'gold': {'aggregation': 'SUM', 'coordinates': [[2, 1], [4, 1]], 'denotation': -3427.0}, 'source_answer': '-3427', 'program': 'add(-2920, -507)'}
+--- rejected FinQA example ---
+0:                  | 1: 2013          | 2: 2012          | 3: 2011         
+net sales           | $ 7757           | $ 7457           | $ 7463          
+operating profit    | 1431             | 1256             | 1069            
+operating margins   | 18.4% ( 18.4 % ) | 16.8% ( 16.8 % ) | 14.3% ( 14.3 % )
+backlog at year-end | 15000            | 14700            | 14400           
+{'question': 'what was the average backlog at year-end of mfc from 2011 to 2013', 'program': 'add(15000, 14700), add(#0, 14400), divide(#1, const_3)', 'source_answer': '147000', 'rejected_because': 'its terms lie in several columns (one row across years); the WTQ head selects from one column, and AVERAGE is not drawn in this revision'}
+{'probe': 'duplicate id', 'rejected': "duplicate id 'same'"}
+{'probe': 'coordinate outside the table', 'rejected': 'records[0]: coordinate [999, 0] outside the 4x3 table'}
+{'probe': 'operator denotation disagrees with its cells', 'rejected': 'records[3]: SUM of the selected cells is -3427.0, denotation says 1000000000.0'}
+{'probe': 'too small', 'rejected': '3 records; 8..20000 are required'}
+[colab] Executing cell 8/13 - tapas_table_qa-22...
+{'MAX_ROWS': 64, 'MAX_COLUMNS': 32, 'MAX_TOKENS': 512, 'MAX_QUERY_CHARS': 500, 'MAX_CELL_CHARS': 200, 'AGGREGATIONS': ('NONE', 'SUM', 'AVERAGE', 'COUNT'), 'CELL_THRESHOLD': 0.5, 'MIN_RECORDS': 8, 'MAX_RECORDS': 20000, 'device': 'cuda:0'}
+{'sample_sha256': 'a750483c64b13ccd...', 'manifest_verdict': 'accepted', 'findings': 1}
+frozen q1: NONE     cells=['Cebu'] numeric_answer=None tokens=52 truncated=False seconds=0.87
+frozen q2: COUNT    cells=['Manila', 'Cebu', 'Davao', 'Baguio'] numeric_answer=4.0 tokens=51 truncated=False seconds=0.13
+frozen q3: SUM      cells=['1,846,513', '1,776,949'] numeric_answer=3623462.0 tokens=56 truncated=False seconds=0.13
+{'decision_rule': 'cell selected when its mean token sigmoid probability > CELL_THRESHOLD=0.5; aggregation operator = argmax over the four aggregation logits; numeric answer computed by the pipeline from the selected cells (COUNT = number of cells; SUM/AVERAGE parse each cell as a number, else None)', 'numeric_answer_source': 'computed by the pipeline from the selected cells, not emitted by the model'}
+{'frozen_scene': {'denotation_accuracy': 1.0}, 'verdict': 'sample-sanity'}
+[colab] Executing cell 9/13 - tapas_table_qa-25...
+{'first_cell_baseline': {'value_accuracy': 0.017, 'strict_accuracy': 0.017, 'aggregation_accuracy': 0.5, 'cell_accuracy': 0.017}, 'n': 60, 'note': 'first cell of the first column, NONE'}
+{'keyword_lookup_baseline': {'value_accuracy': 0.2, 'strict_accuracy': 0.183, 'aggregation_accuracy': 0.767, 'cell_accuracy': 0.217}, 'by_category': {'lookup': {'value': 0.27, 'strict': 0.23}, 'sum': {'value': 0.13, 'strict': 0.13}}, 'note': 'header-overlap column, verbatim-cell rows, wording-based operator'}
+{'frozen_model_test': {'value_accuracy': 0.35, 'strict_accuracy': 0.217, 'aggregation_accuracy': 0.583, 'cell_accuracy': 0.367}, 'n': 60, 'verdict': 'measured', 'truncated': 0, 'seconds': 8.0}
+{'definitions': {'value_accuracy': 'value-equality: fraction of questions whose final answer has the gold value regardless of the operator that produced it (numbers to 1e-6 relative; a NONE answer of one numeric cell and an operator answer against one numeric gold cell are compared as numbers; otherwise the same multiset of cell strings after lower-casing); in 0..1', 'strict_accuracy': 'strict-operator: fraction of questions whose value is right under value-equality and whose predicted operator agrees with the reference operator; in 0..1', 'aggregation_accuracy': "fraction of questions whose predicted operator equals the record's; in 0..1", 'cell_accuracy': "fraction of questions whose selected coordinates equal the record's as a set (duplicates ignored); in 0..1"}}
+{'by_category_frozen': {'lookup': {'n': 30, 'value': 0.4, 'strict': 0.13, 'aggregation': 0.37, 'cells': 0.43}, 'sum': {'n': 30, 'value': 0.3, 'strict': 0.3, 'aggregation': 0.8, 'cells': 0.3}}}
+{'frozen_vs_baselines': {'value_accuracy': 'frozen above both baselines', 'strict_accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}}
+[colab] Executing cell 10/13 - tapas_table_qa-28...
+{'epoch': 0, 'train_loss': None, 'val_value_accuracy': 0.444, 'val_strict_accuracy': 0.222, 'val_aggregation_accuracy': 0.639, 'val_cell_accuracy': 0.444, 'val_score': 0.509, 'note': 'frozen model'}
+{'epoch': 1, 'train_loss': 6.8574, 'val_value_accuracy': 0.389, 'val_strict_accuracy': 0.361, 'val_aggregation_accuracy': 0.75, 'val_cell_accuracy': 0.417, 'val_score': 0.519}
+{'epoch': 2, 'train_loss': 2.4611, 'val_value_accuracy': 0.333, 'val_strict_accuracy': 0.333, 'val_aggregation_accuracy': 0.639, 'val_cell_accuracy': 0.444, 'val_score': 0.472}
+{'epoch': 3, 'train_loss': 1.411, 'val_value_accuracy': 0.25, 'val_strict_accuracy': 0.25, 'val_aggregation_accuracy': 0.639, 'val_cell_accuracy': 0.361, 'val_score': 0.417}
+{'epoch': 4, 'train_loss': 1.0729, 'val_value_accuracy': 0.361, 'val_strict_accuracy': 0.361, 'val_aggregation_accuracy': 0.639, 'val_cell_accuracy': 0.444, 'val_score': 0.481}
+{'trainable_parameters': 25198598, 'total_parameters': 336734214, 'best_epoch': 1, 'selection': 'highest validation score (mean of value-equality, aggregation and cell accuracy)', 'started_from': 'pinned base', 'seconds': 71.8}
+[colab] Executing cell 11/13 - tapas_table_qa-31...
+{'value_accuracy': {'first_cell': 0.017, 'keyword': 0.2, 'frozen': 0.35, 'adapted': 0.267}}
+{'strict_accuracy': {'first_cell': 0.017, 'keyword': 0.183, 'frozen': 0.217, 'adapted': 0.25}}
+{'aggregation_accuracy': {'first_cell': 0.5, 'keyword': 0.767, 'frozen': 0.583, 'adapted': 0.7}}
+{'cell_accuracy': {'first_cell': 0.017, 'keyword': 0.217, 'frozen': 0.367, 'adapted': 0.333}}
+{'delta_vs_frozen': {'value_accuracy': -0.083, 'strict_accuracy': 0.033, 'aggregation_accuracy': 0.117, 'cell_accuracy': -0.033}}
+{'by_category': {'lookup': {'n': 30, 'frozen_value': 0.4, 'adapted_value': 0.33, 'frozen_strict': 0.13, 'adapted_strict': 0.3, 'frozen_aggregation': 0.37, 'adapted_aggregation': 0.8}, 'sum': {'n': 30, 'frozen_value': 0.3, 'adapted_value': 0.2, 'frozen_strict': 0.3, 'adapted_strict': 0.2, 'frozen_aggregation': 0.8, 'adapted_aggregation': 0.6}}}
+{'verdicts': {'frozen_vs_baselines': {'value_accuracy': 'frozen above both baselines', 'strict_accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}, 'adapted_vs_frozen_value_accuracy': 'worse', 'adapted_vs_frozen_strict_accuracy': 'improved', 'adapted_vs_frozen_aggregation_accuracy': 'improved', 'adapted_vs_frozen_cell_accuracy': 'worse'}}
+{'operator_regressions': ['sum']}
+{'verdicts': {'frozen_vs_baselines': {'value_accuracy': 'frozen above both baselines', 'strict_accuracy': 'frozen above both baselines', 'aggregation_accuracy': 'a baseline ties or beats the frozen model', 'cell_accuracy': 'frozen above both baselines'}, 'adapted_vs_frozen_value_accuracy': 'worse', 'adapted_vs_frozen_strict_accuracy': 'improved', 'adapted_vs_frozen_aggregation_accuracy': 'improved', 'adapted_vs_frozen_cell_accuracy': 'worse'}, 'operator_regressions': ['sum']}
+{'report': 'outputs/tapas_table_qa_evaluation_report.json'}
+[colab] Executing cell 12/13 - tapas_table_qa-34...
+adapted q1: NONE     cells=['Cebu'] numeric_answer=None tokens=52 truncated=False seconds=0.13
+adapted q2: COUNT    cells=['Manila', 'Cebu', 'Davao', 'Baguio'] numeric_answer=4.0 tokens=51 truncated=False seconds=0.15
+adapted q3: NONE     cells=['1,846,513', '1,776,949'] numeric_answer=None tokens=56 truncated=False seconds=0.14
+{'scene_after_adaptation': {'denotation_accuracy': 0.667}, 'verdict': 'sample-sanity'}
+{'artifact': 'outputs/tapas_table_qa_adapter', 'format': 'org.valcorza.tapas-large-wtq.adapter.v1', 'tensors': 38, 'bytes': 100798688, 'sha256': 'f03189879430c3e7...'}
+{'reload_parity': {'identical_answers': 8, 'of': 8}, 'reloaded_best_epoch': 1}
+['tapas_table_qa_adapter', 'tapas_table_qa_answers.csv', 'tapas_table_qa_evaluation_report.json', 'tapas_table_qa_input_manifest.json', 'tapas_table_qa_result.json', 'tapas_table_qa_train.jsonl']
+[colab] Executing cell 13/13 - tapas_table_qa-37...
+{'experiment': 'skipped (RUN_EXPERIMENT = False); the default path above is complete'}
+[colab] Saving notebook with outputs to '<local-run-dir>/tapas_table_qa_colab_a5a73d1_colab-cli-t4_output.ipynb'...
