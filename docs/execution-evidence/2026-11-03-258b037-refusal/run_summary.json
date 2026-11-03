@@ -1,0 +1,71 @@
+{
+  "repo": "tapas-table-question-answering-pipeline",
+  "sha": "258b037e61e21c266ea69a78ed1e18c50013ff2c",
+  "notebook": "tutorials/tapas_table_qa_colab.ipynb",
+  "blob": "b0e2a3c7be7ef19ab80ff0795958c5e8860c8d26",
+  "gpu": "T4",
+  "session": "suite-tapas-258b037-71a2",
+  "started_utc": "2026-11-03T12:29:52+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/etc/hostname'"
+    }
+  ],
+  "run_copy_blob": "172bfa7b4a3577909eab8e2e611643e3ffa46f66",
+  "run_copy_sha256": "1975921cd00425ac023f84fc37df9f35dc356d0f82e818504fc2930f498750b8",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "tapas_table_qa-19",
+  "refusal_cell_ref": "tapas_table_qa-19",
+  "refusal_cell_index": 7,
+  "cells_dropped": 20,
+  "code_cells_dropped": 6,
+  "original_sha256": "4932ae676ac4bc98ea765e0f1d9dd5da773cafa56a5fd3b2d74713b9460894cb",
+  "status": "[suite-tapas-258b037-71a2] gpu-t4-s-usw1b1-1bt4wch4qqlz5 | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 119.5,
+  "input_unchanged": true,
+  "executed_file": "tapas_table_qa_colab_258b037_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "log_total": 7,
+  "code_cells": 7,
+  "executed_cells": 4,
+  "errors": [
+    {
+      "cell": "tapas_table_qa-19",
+      "ename": "NotebookRefusal",
+      "evalue": "Refused: hostname: line 1: not valid JSON (Extra data at column 2); each line must be one record object. Fix the file and run this cell again."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "e631fd438bf2de72d213d9ff1dcefb4dc7f21d8206762713c477bbb0cf7f5077",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: hostname: line 1: not valid JSON (Extra data at column 2); each line must be one record object. Fix the file and run this cell again.",
+  "halting_cell_index": 7,
+  "halting_cell_id": "tapas_table_qa-19",
+  "error_cells": [
+    7
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}
